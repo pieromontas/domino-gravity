@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EndSide, PlacedTile } from '../engine/types.ts';
 import { createDominoMesh } from './tileMesh.ts';
-import { TILE_LENGTH, TILE_WIDTH } from '../engine/chainPath.ts';
+import { getPlacementMarkerPosition } from '../engine/chainPath.ts';
 
 export class ChainRenderer {
   private scene: THREE.Scene;
@@ -59,13 +59,13 @@ export class ChainRenderer {
     const lastTile = chain[chain.length - 1];
 
     if (validSides.includes('left') && openEnds.left !== null) {
-      const pos = this.calculateEndPosition(firstTile, 'left');
-      this.createEndHighlight(pos, 'left', openEnds.left);
+      const tip = getPlacementMarkerPosition(firstTile, 'left', chain.length);
+      this.createEndHighlight(new THREE.Vector3(tip.x, 0.08, tip.z), 'left', openEnds.left);
     }
 
     if (validSides.includes('right') && openEnds.right !== null) {
-      const pos = this.calculateEndPosition(lastTile, 'right');
-      this.createEndHighlight(pos, 'right', openEnds.right);
+      const tip = getPlacementMarkerPosition(lastTile, 'right', chain.length);
+      this.createEndHighlight(new THREE.Vector3(tip.x, 0.08, tip.z), 'right', openEnds.right);
     }
   }
 
@@ -74,17 +74,6 @@ export class ChainRenderer {
       const obj = this.highlightGroup.children[0];
       this.highlightGroup.remove(obj);
     }
-  }
-
-  private calculateEndPosition(placed: PlacedTile, side: EndSide): THREE.Vector3 {
-    const offset = placed.isDouble ? TILE_WIDTH * 0.8 : TILE_LENGTH * 0.7;
-    // Approximated offset based on side
-    const dirX = side === 'left' ? -1 : 1;
-    return new THREE.Vector3(
-      placed.position.x + dirX * offset,
-      0.08,
-      placed.position.z
-    );
   }
 
   private createEndHighlight(pos: THREE.Vector3, side: EndSide, pip: number) {

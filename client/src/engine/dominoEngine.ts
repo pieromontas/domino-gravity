@@ -215,17 +215,29 @@ export class DominoEngine {
       return true;
     }
 
-    // Chain not empty: check matching end
+    // Chain not empty: only a legal matching end may lock in
     const targetPip = side === 'left' ? state.openEnds.left : state.openEnds.right;
     if (targetPip === null) return false;
 
-    if (actualTile[0] !== targetPip && actualTile[1] !== targetPip) {
+    const legalOnSide = this.getLegalMoves(
+      [actualTile],
+      state.openEnds,
+      false,
+      state.requiredLeadTile
+    ).some(m => m.side === side);
+
+    if (!legalOnSide) {
       state.lastAction = `⚠️ Rule: [${actualTile[0]}|${actualTile[1]}] cannot be played on ${side} (needs ${targetPip})!`;
-      return false; // Illegal move
+      return false;
     }
 
     const placed = this.layoutManager.appendTile(actualTile, side, targetPip, state.chain.length);
-    state.chain.push(placed);
+    // Keep chain[0] = left end, chain[last] = right end so drop-targets track the real tips.
+    if (side === 'left') {
+      state.chain.unshift(placed);
+    } else {
+      state.chain.push(placed);
+    }
 
     // Update open end
     const newPip = actualTile[0] === targetPip ? actualTile[1] : actualTile[0];

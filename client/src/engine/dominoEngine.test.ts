@@ -128,7 +128,9 @@ describe('Domino Rules Engine - Strict Rule Enforcement', () => {
       position: { x: 0, y: 0, z: 0 },
       rotationY: 0,
       pipLeft: 2,
-      pipRight: 5
+      pipRight: 5,
+      outwardX: 1,
+      outwardZ: 0
     }];
 
     const testHand: [number, number][] = [[2, 4], [5, 5], [0, 1]];
