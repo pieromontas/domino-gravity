@@ -13,6 +13,9 @@ export interface PlacedTile {
   sideConnected?: EndSide; // which end of the chain this was added to
   pipLeft: number;  // pip facing open towards left/start of chain
   pipRight: number; // pip facing open towards right/end of chain
+  /** Unit vector from tile center toward the newly opened end (chain growth direction). */
+  outwardX: number;
+  outwardZ: number;
 }
 
 export interface Player {
