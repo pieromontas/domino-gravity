@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Local runner wrapper
+powershell.cmd
+

@@ -1,0 +1,63 @@
+export type Tile = [number, number];
+
+export type EndSide = 'left' | 'right';
+
+export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+export interface PlacedTile {
+  id: string;
+  tile: Tile;
+  isDouble: boolean;
+  position: { x: number; y: number; z: number };
+  rotationY: number; // in radians
+  sideConnected?: EndSide; // which end of the chain this was added to
+  pipLeft: number;  // pip facing open towards left/start of chain
+  pipRight: number; // pip facing open towards right/end of chain
+}
+
+export interface Player {
+  id: string;
+  name: string;
+  avatar: string;
+  isAI: boolean;
+  aiDifficulty?: AIDifficulty;
+  hand: Tile[];
+  score: number;
+  seat: number;
+  isHost?: boolean;
+  connected: boolean;
+}
+
+export interface LegalMove {
+  tile: Tile;
+  side: EndSide;
+  flip: boolean; // whether tile needs to be flipped to match the open end
+}
+
+export type GameStatus = 'lobby' | 'playing' | 'round_end' | 'match_end';
+
+export interface GameState {
+  status: GameStatus;
+  players: Player[];
+  boneyard: Tile[];
+  chain: PlacedTile[];
+  openEnds: {
+    left: number | null;
+    right: number | null;
+  };
+  currentTurn: number; // seat index
+  firstTurnOfRound: boolean;
+  consecutivePasses: number;
+  roundNumber: number;
+  targetScore: number;
+  lastAction: string;
+  winnerSeat: number | null;
+  requiredLeadTile?: Tile | null;
+  roundSummary?: {
+    reason: 'domino' | 'blocked';
+    winnerSeat: number;
+    pointsWon: number;
+    playerPips: { seat: number; name: string; pips: number }[];
+  };
+  seed: number;
+}

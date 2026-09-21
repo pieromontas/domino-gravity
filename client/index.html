@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Domino Gravity - 3D Multiplayer Dominoes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-overlay">
+      <!-- HUD (Active Gameplay) -->
+      <div id="hud" class="hidden">
+        <!-- Top Bar -->
+        <header class="top-bar">
+          <div class="turn-card glass-panel" id="turn-card">
+            <img id="turn-avatar" class="turn-avatar" src="" alt="" />
+            <div class="turn-info">
+              <span class="turn-label">CURRENT TURN</span>
+              <strong id="turn-player-name" class="turn-player-name">-</strong>
+            </div>
+            <div class="turn-timer" id="turn-timer">45s</div>
+          </div>
+
+          <div class="hud-center-stats">
+            <div class="boneyard-pill glass-panel" id="boneyard-pill">
+              <span class="boneyard-icon">🁣</span>
+              <span>Boneyard:</span>
+              <strong id="boneyard-count">14</strong>
+            </div>
+            <div class="round-pill glass-panel">
+              <span>Round <strong id="round-number">1</strong></span>
+              <span class="pill-divider">•</span>
+              <span>First to <strong id="target-score-display">100</strong></span>
+            </div>
+          </div>
+
+          <div class="hud-quick-actions">
+            <button id="btn-view-toggle" class="icon-btn glass-panel" title="Toggle Top-Down / 3/4 View">
+              📐
+            </button>
+            <button id="btn-cam-reset" class="icon-btn glass-panel" title="Reset Camera">
+              🔄
+            </button>
+            <button id="btn-sound-toggle" class="icon-btn glass-panel" title="Toggle Audio">
+              🔊
+            </button>
+          </div>
+        </header>
+
+        <!-- Scores bar -->
+        <div class="scores-bar" id="scores-bar"></div>
+
+        <!-- Action Log Banner -->
+        <div class="action-banner glass-panel" id="action-banner">
+          <span id="action-text">Game started</span>
+        </div>
+
+        <!-- Rule Alert Toast -->
+        <div id="rule-alert-toast" class="rule-alert-toast hidden">
+          <span id="rule-alert-icon">⚠️</span>
+          <span id="rule-alert-text">Rule Notification</span>
+        </div>
+
+        <!-- Interactive Player Hand Tray (Always Visible) -->
+        <div class="hand-tray-container" id="hand-tray-container">
+          <div class="hand-tray glass-panel">
+            <div class="hand-tray-header">
+              <span class="hand-tray-title" id="hand-tray-title">YOUR HAND</span>
+              <span class="hand-tray-hint" id="hand-tray-hint">Select a highlighted domino to play</span>
+            </div>
+            <div class="hand-tiles-list" id="hand-tiles-list"></div>
+          </div>
+        </div>
+
+        <!-- Bottom Action Dock (Draw / Pass) -->
+        <div class="bottom-dock">
+          <div class="action-buttons-group">
+            <button id="btn-draw" class="action-btn btn-amber hidden">
+              <span class="btn-icon">📥</span> Draw Tile (<span id="btn-draw-count">0</span>)
+            </button>
+            <button id="btn-pass" class="action-btn btn-rose hidden">
+              <span class="btn-icon">⏭️</span> Pass Turn
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lobby Screen -->
+      <div id="lobby-screen" class="modal-backdrop">
+        <div class="lobby-card glass-panel">
+          <div class="lobby-header">
+            <div class="title-cluster">
+              <div class="logo-badge">🁢</div>
+              <div>
+                <h1 class="game-title">Domino Gravity</h1>
+                <p class="game-subtitle">3D Multiplayer Discord Activity</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="lobby-seats-grid" id="lobby-seats">
+            <!-- Dynamic 4 seats -->
+          </div>
+
+          <div class="lobby-controls">
+            <div class="match-setting-row">
+              <label for="target-score-select">Match Target Score:</label>
+              <div class="score-selector-pills">
+                <button class="score-pill active" data-score="50">50 pts</button>
+                <button class="score-pill" data-score="100">100 pts</button>
+                <button class="score-pill" data-score="150">150 pts</button>
+              </div>
+            </div>
+
+            <div class="lobby-actions-row">
+              <button id="btn-add-ai" class="btn-secondary">
+                <span>🤖</span> + Add AI Player
+              </button>
+              <button id="btn-start-game" class="btn-primary">
+                <span>▶️</span> Start Match
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Round End Modal -->
+      <div id="round-modal" class="modal-backdrop hidden">
+        <div class="round-card glass-panel">
+          <div class="modal-icon" id="round-modal-icon">🎉</div>
+          <h2 id="round-modal-title">Round Won!</h2>
+          <p id="round-modal-subtitle" class="round-subtitle">Points awarded</p>
+
+          <div class="round-score-table" id="round-score-table"></div>
+
+          <div class="modal-actions">
+            <button id="btn-next-round" class="btn-primary">
+              Next Round →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match Won Modal -->
+      <div id="match-modal" class="modal-backdrop hidden">
+        <div class="round-card glass-panel match-won-card">
+          <div class="modal-icon">🏆</div>
+          <h2 id="match-winner-title">Match Champion!</h2>
+          <p id="match-winner-desc" class="round-subtitle">Victory achieved</p>
+
+          <div class="final-score-list" id="final-score-list"></div>
+
+          <div class="modal-actions">
+            <button id="btn-play-again" class="btn-primary">
+              Play Again (Lobby)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
