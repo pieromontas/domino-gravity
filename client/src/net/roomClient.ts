@@ -1,4 +1,4 @@
-import { AIDifficulty, EndSide, GameState, Tile } from '../engine/types.ts';
+import { AIDifficulty, EndSide, GameState, PlacedTile, Tile } from '../engine/types.ts';
 import { DominoEngine } from '../engine/dominoEngine.ts';
 import { DominoAI } from '../engine/ai.ts';
 import { soundManager } from '../renderer/sound.ts';
@@ -123,6 +123,24 @@ export class RoomClient {
     if (this.state.status !== 'lobby') return;
     this.state.targetScore = score;
     this.state.lastAction = `Target score set to ${score} points`;
+    this.emitUpdate();
+  }
+
+  /** Local-only table snapshot for layout QA (`?preview=longchain`). */
+  public loadStandalonePreview(chain: PlacedTile[], localHand: Tile[]) {
+    this.state.status = 'playing';
+    this.state.chain = chain;
+    this.state.players[0].hand = localHand.map(t => [t[0], t[1]] as Tile);
+    if (this.state.players[1]) {
+      this.state.players[1].hand = [[0, 1], [2, 3], [4, 5], [6, 6]];
+    }
+    this.state.currentTurn = 0;
+    this.state.requiredLeadTile = null;
+    this.state.openEnds = {
+      left: chain[0]?.pipLeft ?? null,
+      right: chain[chain.length - 1]?.pipRight ?? null
+    };
+    this.state.lastAction = `Layout preview — ${chain.length} tiles on the felt`;
     this.emitUpdate();
   }
 

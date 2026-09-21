@@ -3,6 +3,40 @@ import { Player, Tile } from '../engine/types.ts';
 import { createDominoMesh } from './tileMesh.ts';
 import { TILE_LENGTH } from '../engine/chainPath.ts';
 
+/**
+ * Positive X tilt rotates the +Y pip face toward world +Z — the seated
+ * local player / default camera. The previous negative tilt aimed pips
+ * at the table center, so the hand read as backs/edges.
+ */
+export const LOCAL_HAND_FACE_TILT = Math.PI / 2.45;
+
+export interface LocalHandSlot {
+  x: number;
+  y: number;
+  z: number;
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+}
+
+/** Fan slot for the local seat so pips stay readable from the camera. */
+export function localHandSlot(index: number, total: number): LocalHandSlot {
+  const arcRadius = 4.0;
+  const maxSpreadAngle = Math.PI * 0.36;
+  const angleStep = total > 1 ? maxSpreadAngle / Math.max(total - 1, 1) : 0;
+  const startAngle = -(maxSpreadAngle / 2);
+  const angle = total === 1 ? 0 : startAngle + index * angleStep;
+
+  return {
+    x: Math.sin(angle) * arcRadius,
+    y: 0.76,
+    z: 3.35 + (1 - Math.cos(angle)) * 0.5,
+    rotX: LOCAL_HAND_FACE_TILT,
+    rotY: -angle * 0.28,
+    rotZ: 0
+  };
+}
+
 export class HandRenderer {
   private scene: THREE.Scene;
   private localHandGroup: THREE.Group;
@@ -45,32 +79,21 @@ export class HandRenderer {
     const total = hand.length;
     if (total === 0) return;
 
-    // Arrange tiles in an elegant arc directly in front of the local seat (Z ~ 3.35 to 3.7)
-    const arcRadius = 4.0;
-    const maxSpreadAngle = Math.PI * 0.36;
-    const angleStep = total > 1 ? maxSpreadAngle / Math.max(total - 1, 1) : 0;
-    const startAngle = -(maxSpreadAngle / 2);
-
     hand.forEach((tile, idx) => {
       const mesh = createDominoMesh(tile);
-      const angle = total === 1 ? 0 : startAngle + idx * angleStep;
+      const slot = localHandSlot(idx, total);
 
-      // Position along curved arc on the felt table
-      const x = Math.sin(angle) * arcRadius;
-      const z = 3.35 + (1 - Math.cos(angle)) * 0.5;
-      const y = 0.38;
-
-      mesh.position.set(x, y, z);
-      // Tilt face upwards towards camera so pips are completely clear
-      mesh.rotation.x = -Math.PI / 3.1;
-      mesh.rotation.y = -angle * 0.5;
-      mesh.rotation.z = 0;
+      mesh.position.set(slot.x, slot.y, slot.z);
+      mesh.rotation.order = 'XYZ';
+      mesh.rotation.x = slot.rotX;
+      mesh.rotation.y = slot.rotY;
+      mesh.rotation.z = slot.rotZ;
 
       mesh.userData = {
         tile,
         index: idx,
         isLocalHandTile: true,
-        basePos: new THREE.Vector3(x, y, z),
+        basePos: new THREE.Vector3(slot.x, slot.y, slot.z),
         baseRotX: mesh.rotation.x,
         baseRotY: mesh.rotation.y
       };

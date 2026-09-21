@@ -4,7 +4,25 @@ import { isDouble } from './dominoDeck.ts';
 export const TILE_LENGTH = 1.0;
 export const TILE_WIDTH = 0.5;
 export const TILE_THICKNESS = 0.14;
-const TABLE_LIMIT_X = 3.6;
+
+/**
+ * Playable snake rails. Felt radius is 6.2 and the gold inset is 4.8;
+ * a wide X rail lets a late-round chain (15–28 tiles) stay on 1–2 rows
+ * per wing instead of folding into a tight, overlapping U.
+ * Z rail keeps the snake off the local hand (~z 3.35) and opponent racks.
+ */
+export const SNAKE_LIMIT_X = 5.25;
+export const SNAKE_LIMIT_Z = 2.55;
+
+/** Extra air at 90° corners so L-turns read as a clean snake, not a pile. */
+export const CORNER_GAP = 0.06;
+
+export interface ChainBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
 
 /**
  * Mesh local axes (see tileMesh BoxGeometry):
@@ -15,11 +33,9 @@ const TABLE_LIMIT_X = 3.6;
  *   ±π/2  → long axis along world X (singles when chain is on X)
  */
 export interface ChainHeadState {
-  x: number;
-  z: number;
+  last: PlacedTile | null;
   dirX: number; // -1, 0, or 1
   dirZ: number; // -1, 0, or 1
-  curRow: number; // row offset
 }
 
 /** Half-extents of a placed tile on X/Z given its yaw. */
@@ -37,6 +53,55 @@ export function tilesOverlap(a: PlacedTile, b: PlacedTile, epsilon = 0.02): bool
   const dx = Math.abs(a.position.x - b.position.x);
   const dz = Math.abs(a.position.z - b.position.z);
   return dx < ea.hx + eb.hx - epsilon && dz < ea.hz + eb.hz - epsilon;
+}
+
+export function chainWorldBounds(chain: PlacedTile[]): ChainBounds | null {
+  if (chain.length === 0) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const pt of chain) {
+    const e = tileHalfExtents(pt.rotationY);
+    minX = Math.min(minX, pt.position.x - e.hx);
+    maxX = Math.max(maxX, pt.position.x + e.hx);
+    minZ = Math.min(minZ, pt.position.z - e.hz);
+    maxZ = Math.max(maxZ, pt.position.z + e.hz);
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+/**
+ * Orbit radius / top-down height that keeps the chain AABB in frame.
+ * Pure so layout tests can lock the zoom curve without a WebGL context.
+ */
+export function recommendedViewForChain(
+  bounds: ChainBounds,
+  fovDeg: number,
+  aspect: number
+): { lookAtX: number; lookAtZ: number; radius: number; topY: number } {
+  const spanX = bounds.maxX - bounds.minX;
+  const spanZ = bounds.maxZ - bounds.minZ;
+  const padding = 1.7;
+  const halfW = spanX / 2 + padding;
+  const halfD = spanZ / 2 + padding;
+  const lookAtX = (bounds.minX + bounds.maxX) / 2;
+  const lookAtZ = (bounds.minZ + bounds.maxZ) / 2 + 0.35;
+  const fov = (fovDeg * Math.PI) / 180;
+  const tan = Math.tan(fov / 2);
+  const safeAspect = Math.max(aspect, 0.35);
+  const frustum = Math.max(halfD / tan, halfW / (tan * safeAspect));
+  // Pull back with chain span so a late-round line still reads on the felt,
+  // even when the default 16:9 frustum would technically fit at radius 12.
+  const spanBoost = 8.2 + Math.max(spanX, spanZ) * 0.82;
+  const radius = Math.max(12, frustum, spanBoost);
+  const topY = Math.max(14.5, halfW / tan + 2.2, halfD / tan + 2.2, radius + 2);
+  return {
+    lookAtX,
+    lookAtZ,
+    radius: Math.min(22, radius),
+    topY: Math.min(24, topY)
+  };
 }
 
 /**
@@ -74,6 +139,50 @@ export function yawForPlacedTile(
 }
 
 /**
+ * Center of the next tile so it kisses the previous one.
+ * Straight joints meet end-to-end; 90° joints form an L (not a T or overlap).
+ */
+export function positionAfter(
+  prev: PlacedTile,
+  oldDirX: number,
+  oldDirZ: number,
+  dirX: number,
+  dirZ: number,
+  newRotationY: number,
+  isTurn: boolean
+): { x: number; z: number } {
+  const prevExt = tileHalfExtents(prev.rotationY);
+  const newExt = tileHalfExtents(newRotationY);
+  const gap = isTurn ? CORNER_GAP : 0;
+
+  if (!isTurn) {
+    return {
+      x: prev.position.x + dirX * (prevExt.hx + newExt.hx),
+      z: prev.position.z + dirZ * (prevExt.hz + newExt.hz)
+    };
+  }
+
+  // Leave an X-row: keep the turn flush with the previous tip so the
+  // L-junction does not walk past the X rail, then step out in Z.
+  if (Math.abs(oldDirX) === 1) {
+    return {
+      x: prev.position.x + oldDirX * (prevExt.hx - newExt.hx),
+      z: prev.position.z + dirZ * (prevExt.hz + newExt.hz + gap)
+    };
+  }
+
+  // Come off the corner onto the next row (Z → reverse X).
+  return {
+    x: prev.position.x + dirX * (prevExt.hx + newExt.hx + gap),
+    z: prev.position.z + oldDirZ * (prevExt.hz + newExt.hz + gap)
+  };
+}
+
+function aabbExceedsRail(x: number, z: number, hx: number, hz: number): boolean {
+  return Math.abs(x) + hx > SNAKE_LIMIT_X || Math.abs(z) + hz > SNAKE_LIMIT_Z;
+}
+
+/**
  * Glowing drop-target just past the open tip of an end tile, along the true
  * chain heading — not a naive ±X offset from chain[0].
  */
@@ -101,13 +210,13 @@ export class ChainLayoutManager {
   private rightHead: ChainHeadState;
 
   constructor() {
-    this.leftHead = { x: 0, z: 0, dirX: -1, dirZ: 0, curRow: 0 };
-    this.rightHead = { x: 0, z: 0, dirX: 1, dirZ: 0, curRow: 0 };
+    this.leftHead = { last: null, dirX: -1, dirZ: 0 };
+    this.rightHead = { last: null, dirX: 1, dirZ: 0 };
   }
 
   public reset() {
-    this.leftHead = { x: 0, z: 0, dirX: -1, dirZ: 0, curRow: 0 };
-    this.rightHead = { x: 0, z: 0, dirX: 1, dirZ: 0, curRow: 0 };
+    this.leftHead = { last: null, dirX: -1, dirZ: 0 };
+    this.rightHead = { last: null, dirX: 1, dirZ: 0 };
   }
 
   /**
@@ -117,24 +226,8 @@ export class ChainLayoutManager {
     const double = isDouble(tile);
     // Doubles sit spinner-style (long axis Z). Singles lie along X with tile[0] on -X.
     const rot = double ? 0 : Math.PI / 2;
-    const halfSpan = double ? TILE_WIDTH / 2 : TILE_LENGTH / 2;
 
-    this.leftHead = {
-      x: -halfSpan,
-      z: 0,
-      dirX: -1,
-      dirZ: 0,
-      curRow: 0
-    };
-    this.rightHead = {
-      x: halfSpan,
-      z: 0,
-      dirX: 1,
-      dirZ: 0,
-      curRow: 0
-    };
-
-    return {
+    const placed: PlacedTile = {
       id: `placed-0`,
       tile,
       isDouble: double,
@@ -145,6 +238,11 @@ export class ChainLayoutManager {
       outwardX: 1,
       outwardZ: 0
     };
+
+    this.leftHead = { last: placed, dirX: -1, dirZ: 0 };
+    this.rightHead = { last: placed, dirX: 1, dirZ: 0 };
+
+    return placed;
   }
 
   /**
@@ -157,6 +255,11 @@ export class ChainLayoutManager {
     totalChainLength: number
   ): PlacedTile {
     const head = side === 'left' ? this.leftHead : this.rightHead;
+    const prev = head.last;
+    if (!prev) {
+      return this.calculateFirstTile(tile);
+    }
+
     const double = isDouble(tile);
 
     let openPip: number;
@@ -166,45 +269,41 @@ export class ChainLayoutManager {
       openPip = tile[0];
     }
 
-    // Snake before placing so this tile follows the new heading if we hit the rail.
-    if (head.dirZ === 0) {
-      const willExceed = (head.dirX > 0 && head.x + TILE_LENGTH > TABLE_LIMIT_X) ||
-                         (head.dirX < 0 && head.x - TILE_LENGTH < -TABLE_LIMIT_X);
+    const oldDirX = head.dirX;
+    const oldDirZ = head.dirZ;
+    let dirX = oldDirX;
+    let dirZ = oldDirZ;
 
-      if (willExceed) {
+    // Snake before placing so this tile follows the new heading if we hit the rail.
+    if (dirZ === 0) {
+      const trialRot = yawForPlacedTile(tile, matchingPip, dirX, dirZ);
+      const trialPos = positionAfter(prev, oldDirX, oldDirZ, dirX, dirZ, trialRot, false);
+      const trialExt = tileHalfExtents(trialRot);
+      if (aabbExceedsRail(trialPos.x, trialPos.z, trialExt.hx, trialExt.hz)) {
         const turnZ = side === 'right' ? 1 : -1;
-        head.curRow += turnZ;
-        head.dirZ = turnZ;
-        head.dirX = 0;
+        dirZ = turnZ;
+        dirX = 0;
       }
-    } else if (head.dirX === 0) {
-      const newDirX = side === 'right' ? -1 : 1;
-      head.dirX = newDirX;
-      head.dirZ = 0;
+    } else {
+      dirX = side === 'right' ? -1 : 1;
+      dirZ = 0;
     }
 
-    const stepLength = double ? TILE_WIDTH : TILE_LENGTH;
-    const halfStep = stepLength / 2;
+    const isTurn = dirX !== oldDirX || dirZ !== oldDirZ;
+    const rot = yawForPlacedTile(tile, matchingPip, dirX, dirZ);
+    const pos = positionAfter(prev, oldDirX, oldDirZ, dirX, dirZ, rot, isTurn);
 
-    const posX = head.x + head.dirX * halfStep;
-    const posZ = head.z + head.dirZ * halfStep;
-
-    const outwardX = head.dirX;
-    const outwardZ = head.dirZ;
-
-    head.x += head.dirX * stepLength;
-    head.z += head.dirZ * stepLength;
-
-    const rot = yawForPlacedTile(tile, matchingPip, outwardX, outwardZ);
+    const outwardX = dirX;
+    const outwardZ = dirZ;
 
     const pipLeft = side === 'left' ? openPip : matchingPip;
     const pipRight = side === 'right' ? openPip : matchingPip;
 
-    return {
+    const placed: PlacedTile = {
       id: `placed-${totalChainLength}`,
       tile,
       isDouble: double,
-      position: { x: posX, y: TILE_THICKNESS / 2, z: posZ },
+      position: { x: pos.x, y: TILE_THICKNESS / 2, z: pos.z },
       rotationY: rot,
       sideConnected: side,
       pipLeft,
@@ -212,5 +311,42 @@ export class ChainLayoutManager {
       outwardX,
       outwardZ
     };
+
+    head.last = placed;
+    head.dirX = dirX;
+    head.dirZ = dirZ;
+
+    return placed;
   }
+}
+
+/**
+ * Deterministic late-round snake for tests and visual previews.
+ * Alternates left/right so both wings grow, inserting an occasional double.
+ */
+export function buildAlternatingSnake(count: number): PlacedTile[] {
+  const layout = new ChainLayoutManager();
+  if (count <= 0) return [];
+
+  const chain: PlacedTile[] = [layout.calculateFirstTile([6, 6])];
+  let leftPip = 6;
+  let rightPip = 6;
+
+  for (let i = 1; i < count; i++) {
+    const side: EndSide = i % 2 === 1 ? 'right' : 'left';
+    const match = side === 'left' ? leftPip : rightPip;
+    const asDouble = i % 8 === 0;
+    const open = asDouble ? match : (match + 1 + (i % 5)) % 7;
+    const tile: Tile = asDouble ? [match, match] : [match, open];
+    const placed = layout.appendTile(tile, side, match, chain.length);
+    if (side === 'left') {
+      chain.unshift(placed);
+      leftPip = open;
+    } else {
+      chain.push(placed);
+      rightPip = open;
+    }
+  }
+
+  return chain;
 }
