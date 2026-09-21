@@ -8,7 +8,8 @@ import { TILE_LENGTH } from '../engine/chainPath.ts';
  * local player / default camera. The previous negative tilt aimed pips
  * at the table center, so the hand read as backs/edges.
  */
-export const LOCAL_HAND_FACE_TILT = Math.PI / 2.45;
+/** Match the default orbit phi (~53°) so +Y pips point at the 3/4 camera. */
+export const LOCAL_HAND_FACE_TILT = Math.PI / 3.4;
 
 export interface LocalHandSlot {
   x: number;
@@ -29,7 +30,7 @@ export function localHandSlot(index: number, total: number): LocalHandSlot {
 
   return {
     x: Math.sin(angle) * arcRadius,
-    y: 0.76,
+    y: 0.56,
     z: 3.35 + (1 - Math.cos(angle)) * 0.5,
     rotX: LOCAL_HAND_FACE_TILT,
     rotY: -angle * 0.28,
