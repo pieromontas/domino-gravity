@@ -149,7 +149,7 @@ export class HandRenderer {
     rackGroup.position.set(cx, 0.2, cz);
     rackGroup.rotation.y = angle + Math.PI;
 
-    const count = player.hand.length;
+    const count = player.handCount ?? player.hand.length;
     const spacing = 0.52;
     const startX = -((count - 1) * spacing) / 2;
 
@@ -197,7 +197,7 @@ export class HandRenderer {
     ctx.fillStyle = '#F3F4F6';
     ctx.font = 'bold 24px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`🁣 ${player.hand.length}`, 316, 48);
+    ctx.fillText(`🁣 ${player.handCount ?? player.hand.length}`, 316, 48);
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMat = new THREE.SpriteMaterial({ map: texture });

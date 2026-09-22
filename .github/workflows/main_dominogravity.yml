@@ -23,9 +23,12 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: npm install, build, and test
+      - name: npm ci, build, and test
+        env:
+          VITE_DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID }}
+          NODE_ENV: production
         run: |
-          npm install
+          npm ci
           npm run build --if-present
           npm run test --if-present
 

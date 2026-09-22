@@ -14,12 +14,14 @@ export class ModalsUI {
 
     const btnNextRound = document.getElementById('btn-next-round');
     btnNextRound?.addEventListener('click', () => {
+      if (!this.roomClient.isLocalHost()) return;
       this.roundModal.classList.add('hidden');
       this.roomClient.startNextRound();
     });
 
     const btnPlayAgain = document.getElementById('btn-play-again');
     btnPlayAgain?.addEventListener('click', () => {
+      if (!this.roomClient.isLocalHost()) return;
       this.matchModal.classList.add('hidden');
       this.roomClient.resetMatch();
     });
@@ -70,6 +72,14 @@ export class ModalsUI {
       });
     }
 
+    const btnNextRound = document.getElementById('btn-next-round') as HTMLButtonElement | null;
+    if (btnNextRound) {
+      const host = this.roomClient.isLocalHost();
+      btnNextRound.disabled = !host;
+      btnNextRound.style.opacity = host ? '1' : '0.5';
+      btnNextRound.textContent = host ? 'Next Round →' : 'Waiting for host…';
+    }
+
     this.roundModal.classList.remove('hidden');
   }
 
@@ -95,6 +105,14 @@ export class ModalsUI {
         `;
         list.appendChild(row);
       });
+    }
+
+    const btnPlayAgain = document.getElementById('btn-play-again') as HTMLButtonElement | null;
+    if (btnPlayAgain) {
+      const host = this.roomClient.isLocalHost();
+      btnPlayAgain.disabled = !host;
+      btnPlayAgain.style.opacity = host ? '1' : '0.5';
+      btnPlayAgain.textContent = host ? 'Play Again (Lobby)' : 'Waiting for host…';
     }
 
     this.matchModal.classList.remove('hidden');
