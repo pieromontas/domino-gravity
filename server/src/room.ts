@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { DominoAI } from './engine/ai.js';
 import { DominoEngine } from './engine/dominoEngine.js';
+import { isAIDifficulty } from './engine/aiDifficulty.js';
 import { AIDifficulty, EndSide, GameState, Player, Tile } from './engine/types.js';
 import { redactGameState } from './redact.js';
 import { PlayerSession } from './session.js';
@@ -207,9 +208,11 @@ export class GameRoom {
     return { ok: true };
   }
 
-  public addAI(actorUserId: string, difficulty: AIDifficulty = 'easy'): ActionResult {
+  public addAI(actorUserId: string, difficulty: unknown = 'easy'): ActionResult {
     const auth = this.requireHost(actorUserId);
     if (!auth.ok) return auth;
+    const parsed = this.parseDifficulty(difficulty);
+    if (!parsed.ok) return parsed;
     if (this.state.status !== 'lobby') {
       return { ok: false, code: 'NOT_LOBBY', message: 'Can only add AI in the lobby.' };
     }
@@ -232,7 +235,7 @@ export class GameRoom {
       name: `${nextName} (AI)`,
       avatar: `https://cdn.discordapp.com/embed/avatars/${seat % 5}.png`,
       isAI: true,
-      aiDifficulty: difficulty,
+      aiDifficulty: parsed.difficulty,
       hand: [],
       handCount: 0,
       score: 0,
@@ -240,7 +243,26 @@ export class GameRoom {
       connected: true,
       pendingJoin: false
     });
-    this.state.lastAction = `Host added ${nextName} (${difficulty.toUpperCase()} AI).`;
+    this.state.lastAction = `Host added ${nextName} (${parsed.difficulty.toUpperCase()} AI).`;
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public setAIDifficulty(actorUserId: string, seat: number, difficulty: unknown): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    const parsed = this.parseDifficulty(difficulty, { allowMissing: false });
+    if (!parsed.ok) return parsed;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Difficulty can only be changed in the lobby.' };
+    }
+    const player = this.state.players.find((p) => p.seat === seat);
+    if (!player) return { ok: false, code: 'NO_SEAT', message: 'Seat is empty.' };
+    if (!player.isAI) {
+      return { ok: false, code: 'HUMAN_SEAT', message: 'Cannot change difficulty for a human player.' };
+    }
+    player.aiDifficulty = parsed.difficulty;
+    this.state.lastAction = `Host set ${player.name} to ${parsed.difficulty.toUpperCase()} AI.`;
     this.broadcastState();
     return { ok: true };
   }
@@ -374,7 +396,9 @@ export class GameRoom {
     const type = data.type;
     switch (type) {
       case 'ADD_AI':
-        return this.addAI(userId, (data.difficulty as AIDifficulty) || 'easy');
+        return this.addAI(userId, data.difficulty);
+      case 'SET_AI_DIFFICULTY':
+        return this.setAIDifficulty(userId, Number(data.seat), data.difficulty);
       case 'REMOVE_SEAT':
         return this.removeSeat(userId, Number(data.seat));
       case 'SET_TARGET_SCORE':
@@ -502,6 +526,21 @@ export class GameRoom {
 
   private readyPlayerCount(): number {
     return this.state.players.filter((p) => p.isAI || (p.connected && !p.pendingJoin)).length;
+  }
+
+  private parseDifficulty(
+    value: unknown,
+    options: { allowMissing?: boolean } = {}
+  ): ActionResult & { difficulty: AIDifficulty } {
+    const allowMissing = options.allowMissing !== false;
+    if (value === undefined || value === null || value === '') {
+      if (allowMissing) return { ok: true, difficulty: 'easy' };
+      return { ok: false, code: 'BAD_DIFFICULTY', message: 'Difficulty must be easy, normal, or hard.', difficulty: 'easy' };
+    }
+    if (!isAIDifficulty(value)) {
+      return { ok: false, code: 'BAD_DIFFICULTY', message: 'Difficulty must be easy, normal, or hard.', difficulty: 'easy' };
+    }
+    return { ok: true, difficulty: value };
   }
 
   private requireHost(userId: string): ActionResult {

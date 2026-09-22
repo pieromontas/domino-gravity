@@ -1,4 +1,9 @@
 import { AIDifficulty, GameState } from '../engine/types.ts';
+import {
+  cycleAIDifficulty,
+  formatAIDifficultyLabel,
+  parseAIDifficulty
+} from '../engine/aiDifficulty.ts';
 import { RoomClient } from '../net/roomClient.ts';
 
 function escapeHtml(value: string): string {
@@ -14,6 +19,7 @@ function escapeHtml(value: string): string {
 export class LobbyUI {
   private container: HTMLElement;
   private roomClient: RoomClient;
+  private pendingDifficulty: AIDifficulty = 'easy';
 
   constructor(roomClient: RoomClient) {
     this.roomClient = roomClient;
@@ -26,10 +32,7 @@ export class LobbyUI {
     if (btnAddAI) {
       btnAddAI.addEventListener('click', () => {
         if (!this.roomClient.isLocalHost()) return;
-        const count = this.roomClient.getState().players.length;
-        const diffs: AIDifficulty[] = ['easy', 'normal', 'hard'];
-        const chosenDiff = diffs[(count - 1) % diffs.length];
-        this.roomClient.addAI(chosenDiff);
+        this.roomClient.addAI(this.pendingDifficulty);
       });
     }
 
@@ -51,6 +54,26 @@ export class LobbyUI {
         const score = parseInt(target.getAttribute('data-score') || '100', 10);
         this.roomClient.setTargetScore(score);
       });
+    });
+
+    const diffPills = document.querySelectorAll('.diff-pill');
+    diffPills.forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        if (!this.roomClient.isLocalHost()) return;
+        const target = e.currentTarget as HTMLElement;
+        this.pendingDifficulty = parseAIDifficulty(target.getAttribute('data-difficulty'));
+        this.syncDifficultyPills();
+      });
+    });
+  }
+
+  private syncDifficultyPills(isHost = this.roomClient.isLocalHost()) {
+    const diffPills = document.querySelectorAll('.diff-pill');
+    diffPills.forEach((pill) => {
+      const el = pill as HTMLButtonElement;
+      const diff = parseAIDifficulty(el.getAttribute('data-difficulty'));
+      el.classList.toggle('active', diff === this.pendingDifficulty);
+      el.disabled = !isHost;
     });
   }
 
@@ -79,8 +102,12 @@ export class LobbyUI {
             ? 'occupied'
             : 'disconnected';
         card.className = `seat-card ${status}`;
+        const difficulty = parseAIDifficulty(player.aiDifficulty);
+        const difficultyLabel = formatAIDifficultyLabel(difficulty);
         const diffBadge = player.isAI
-          ? `<span class="difficulty-tag diff-${player.aiDifficulty || 'easy'}">${player.aiDifficulty || 'EASY'}</span>`
+          ? (isHost
+            ? `<button type="button" class="difficulty-tag diff-${difficulty} interactive" data-seat="${seatIdx}" title="Click to cycle difficulty">${difficultyLabel}</button>`
+            : `<span class="difficulty-tag diff-${difficulty}">${difficultyLabel}</span>`)
           : `<span class="seat-badge">${player.isHost ? '👑 Host' : player.pendingJoin ? 'Joining…' : player.connected ? 'Player' : 'Reconnecting…'}</span>`;
 
         const kickBtn = player.isAI && isHost
@@ -102,6 +129,10 @@ export class LobbyUI {
           const kick = card.querySelector('.btn-kick');
           kick?.addEventListener('click', () => {
             this.roomClient.removePlayer(seatIdx);
+          });
+          const badge = card.querySelector('.difficulty-tag.interactive');
+          badge?.addEventListener('click', () => {
+            this.roomClient.setAIDifficulty(seatIdx, cycleAIDifficulty(player.aiDifficulty));
           });
         }
       } else {
@@ -136,6 +167,8 @@ export class LobbyUI {
       const score = parseInt(el.getAttribute('data-score') || '100', 10);
       el.classList.toggle('active', score === state.targetScore);
     });
+
+    this.syncDifficultyPills(isHost);
 
     let meta = document.getElementById('lobby-meta');
     if (!meta) {

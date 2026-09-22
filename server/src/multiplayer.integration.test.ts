@@ -8,7 +8,7 @@ interface Packet {
     status: string;
     currentTurn: number;
     chain: unknown[];
-    players: Array<{ id: string; name: string; hand: unknown[]; handCount?: number; isHost?: boolean }>;
+    players: Array<{ id: string; name: string; seat?: number; hand: unknown[]; handCount?: number; isHost?: boolean; isAI?: boolean; aiDifficulty?: string }>;
     lastAction: string;
     requiredLeadTile?: [number, number] | null;
     boneyard?: unknown[];
@@ -147,5 +147,46 @@ describe('two clients share a room while a third room stays isolated', () => {
       defaultRoom.on('error', () => resolve(-1));
     });
     expect(defaultClosed).toBe(4002);
+  });
+
+  it('syncs host-chosen AI difficulty to every client', async () => {
+    server = createGameServer({ graceMs: 200, aiDelayMs: 10_000, allowDevSessions: true });
+    const port = await server.listen(0);
+
+    const alex = server.sessions.createDevSession({ displayName: 'Alex', userId: 'alex' });
+    const sam = server.sessions.createDevSession({ displayName: 'Sam', userId: 'sam' });
+    const roomId = 'browser:ai-difficulty';
+
+    const host = await connectClient(port, alex.token, roomId);
+    const guest = await connectClient(port, sam.token, roomId);
+    await host.waitFor('SYNC_STATE', (p) => (p.state?.players.length ?? 0) >= 2);
+    await guest.waitFor('SYNC_STATE', (p) => (p.state?.players.length ?? 0) >= 2);
+
+    host.send({ type: 'ADD_AI', difficulty: 'hard' });
+    const addedHost = await host.waitFor('SYNC_STATE', (p) => p.state?.players.some((row) => row.isAI) === true);
+    const addedGuest = await guest.waitFor('SYNC_STATE', (p) => p.state?.players.some((row) => row.isAI) === true);
+    const hostBot = addedHost.state?.players.find((p) => p.isAI);
+    const guestBot = addedGuest.state?.players.find((p) => p.isAI);
+    expect(hostBot?.aiDifficulty).toBe('hard');
+    expect(guestBot?.aiDifficulty).toBe('hard');
+
+    guest.send({ type: 'SET_AI_DIFFICULTY', seat: hostBot!.seat ?? 2, difficulty: 'easy' });
+    const denied = await guest.waitFor('ERROR');
+    expect(denied.message).toMatch(/host/i);
+
+    host.send({ type: 'SET_AI_DIFFICULTY', seat: hostBot!.seat, difficulty: 'normal' });
+    const changedHost = await host.waitFor('SYNC_STATE', (p) => p.state?.players.find((row) => row.isAI)?.aiDifficulty === 'normal');
+    const changedGuest = await guest.waitFor('SYNC_STATE', (p) => p.state?.players.find((row) => row.isAI)?.aiDifficulty === 'normal');
+    expect(changedHost.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+    expect(changedGuest.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+
+    host.send({ type: 'START_GAME' });
+    const playHost = await host.waitFor('SYNC_STATE', (p) => p.state?.status === 'playing');
+    const playGuest = await guest.waitFor('SYNC_STATE', (p) => p.state?.status === 'playing');
+    expect(playHost.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+    expect(playGuest.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+
+    guest.ws.close();
+    host.ws.close();
   });
 });
