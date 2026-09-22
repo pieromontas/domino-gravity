@@ -70,7 +70,7 @@ html, body, #app {
 }
 
 /* Turn on pointer events for interactive elements */
-#hud, .modal-backdrop, .action-btn, .icon-btn, .lobby-card, .round-card {
+#hud, .modal-backdrop, .action-btn, .icon-btn, .lobby-card, .round-card, .preview-banner {
   pointer-events: auto;
 }
 
@@ -237,6 +237,47 @@ html, body, #app {
   z-index: 15;
   transition: all 0.3s ease;
   white-space: nowrap;
+}
+
+.preview-banner {
+  position: absolute;
+  top: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 14px 10px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(18, 24, 34, 0.92);
+}
+
+.preview-banner-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.preview-banner-copy strong {
+  font-size: 13px;
+  color: var(--accent-gold);
+}
+
+.preview-banner-copy span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.preview-banner .btn-primary {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  font-size: 13px;
 }
 
 /* RULE ALERT TOAST */
