@@ -176,7 +176,9 @@ Set the generated HTTPS URL in your Discord Developer Portal URL Mappings, launc
 
 ### Production build (Azure App Service / Node 22)
 
-Azure should build and start the **one** Node process that serves `client/dist` and `/ws`:
+GitHub Actions builds the app (`npm ci && npm run build && npm test`), prunes to production `node_modules`, and ZIP-deploys the already-built `client/dist` + `server/dist`. Azure must **not** run Oryx/`npm run build` again — the deploy package does not include TypeScript sources or `tsconfig.json`.
+
+Start the **one** Node process that serves static `client/dist` plus same-origin `/api` and `/ws`:
 
 ```bash
 npm ci
@@ -201,11 +203,17 @@ Do not commit `.env` or secrets. In GitHub Actions, store `VITE_DISCORD_CLIENT_I
 ### Azure App Service steps
 
 1. Create a **Node 22** Linux Web App.
-2. Startup command: `node server/dist/server.js` (or `npm start`).
-3. Application settings: `NODE_ENV=production`, `VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`. `PORT` is injected.
+2. Startup command: `node server/dist/server.js` (or `npm start`). Confirm this under **Configuration → General settings → Startup Command**.
+3. Application settings (Configuration → Application settings):
+   - `SCM_DO_BUILD_DURING_DEPLOYMENT=false` — required so ZIP Deploy does not rerun `tsc` / Vite.
+   - `ENABLE_ORYX_BUILD=false` — extra guard against Oryx on Linux.
+   - `NODE_ENV=production`
+   - `VITE_DISCORD_CLIENT_ID`
+   - `DISCORD_CLIENT_SECRET`
+   - `PORT` is injected by App Service.
 4. Enable WebSockets on the App Service.
 5. Point Discord Activity URL mappings at the App Service origin (`/` → the site).
-6. Deploy with the existing GitHub Action (`npm ci && npm run build && npm test`) or zip-deploy the repo after a local `npm ci && npm run build` so `client/dist` and `server/dist` are present.
+6. Deploy with the GitHub Action. It sets the Oryx/startup settings above, then uploads the prebuilt ZIP. Do not expect Azure to compile TypeScript.
 
 ### Other hosts
 
