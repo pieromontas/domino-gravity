@@ -41,6 +41,7 @@
 ```
 DominoDiscord/
 ├── client/                     # Frontend Discord Activity (Vite + Three.js)
+│   ├── .env.production         # Public Discord Application ID for Vite production builds
 │   ├── index.html              # HTML entry point with responsive viewport
 │   ├── vite.config.ts          # Vite configuration with /api and /ws proxy
 │   └── src/
@@ -192,13 +193,15 @@ Root `npm start` is the same start command. `/api/health` and WebSockets on `/ws
 
 | Variable | Where | Notes |
 | --- | --- | --- |
-| `VITE_DISCORD_CLIENT_ID` | Vite **build** and server runtime | Discord Application ID |
+| `VITE_DISCORD_CLIENT_ID` | Vite **build** and server runtime | Discord Application ID (public). Production builds default to `client/.env.production`. |
 | `DISCORD_CLIENT_SECRET` | Server only | OAuth token exchange. Never ship this to the client. |
 | `NODE_ENV` | Server | `production` on Azure |
 | `PORT` | Server | Injected by Azure App Service |
 | `ROOM_GRACE_MS` | Server, optional | Reconnect / empty-room grace (default `60000`) |
 
-Do not commit `.env` or secrets. In GitHub Actions, store `VITE_DISCORD_CLIENT_ID` as a repository secret so `npm run build` can embed it in the Vite bundle. Set `DISCORD_CLIENT_SECRET` and `VITE_DISCORD_CLIENT_ID` on the App Service configuration, not in source.
+Azure App Settings (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`) are injected into the Node process at **runtime**. They do **not** bake values into the Vite client bundle — that happens only during `npm run build` (GitHub Actions). If the client ships without an Application ID, Discord Activity init never runs and the UI stays **You · local table**.
+
+The public Application ID is committed in `client/.env.production` (`1551749381705961514`). The Actions workflow also falls back to that ID when repository secret `VITE_DISCORD_CLIENT_ID` is unset, so the secret is an optional override. Never commit `DISCORD_CLIENT_SECRET`. Set the secret on App Service for the Node token-exchange path.
 
 ### Azure App Service steps
 
@@ -208,7 +211,7 @@ Do not commit `.env` or secrets. In GitHub Actions, store `VITE_DISCORD_CLIENT_I
    - `SCM_DO_BUILD_DURING_DEPLOYMENT=false` — required so ZIP Deploy does not rerun `tsc` / Vite.
    - `ENABLE_ORYX_BUILD=false` — extra guard against Oryx on Linux.
    - `NODE_ENV=production`
-   - `VITE_DISCORD_CLIENT_ID`
+   - `VITE_DISCORD_CLIENT_ID` — Node server runtime only (does not rebuild the client)
    - `DISCORD_CLIENT_SECRET`
    - `PORT` is injected by App Service.
 4. Enable WebSockets on the App Service.

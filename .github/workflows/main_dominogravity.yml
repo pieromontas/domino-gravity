@@ -27,9 +27,14 @@ jobs:
       # Do not set NODE_ENV=production here. npm ci omits workspace
       # devDependencies (typescript, vite, vitest, @types/*) when NODE_ENV is
       # production, which is what broke tsc after PR #4.
+      #
+      # VITE_DISCORD_CLIENT_ID is public and must be present at Vite build time.
+      # An unset Actions secret would otherwise bake an empty string (and that
+      # empty process env also overrides client/.env.production). Azure App
+      # Settings do not rewrite the already-built client bundle.
       - name: npm ci, build, and test
         env:
-          VITE_DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID }}
+          VITE_DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID || '1551749381705961514' }}
         run: |
           npm ci
           npm run build --if-present
