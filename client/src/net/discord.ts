@@ -78,6 +78,8 @@ export class DiscordIntegration {
   }
 
   public async init(): Promise<void> {
+    // Build-time Vite env (client/.env.production or VITE_DISCORD_CLIENT_ID).
+    // Azure App Settings are runtime-only and do not populate this value.
     const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
     const inIframe = window.self !== window.top;
     const urlParams = new URLSearchParams(window.location.search);
