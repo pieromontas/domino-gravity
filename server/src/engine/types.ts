@@ -1,3 +1,4 @@
+/** Keep in sync with client/src/engine/types.ts */
 export type Tile = [number, number];
 
 export type EndSide = 'left' | 'right';

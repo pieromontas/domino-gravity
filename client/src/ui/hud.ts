@@ -129,7 +129,9 @@ export class GameHUD {
 
     // Boneyard & round info
     const boneyardCount = document.getElementById('boneyard-count');
-    if (boneyardCount) boneyardCount.textContent = state.boneyard.length.toString();
+    if (boneyardCount) {
+      boneyardCount.textContent = String(state.boneyardCount ?? state.boneyard.length);
+    }
 
     const roundNum = document.getElementById('round-number');
     if (roundNum) roundNum.textContent = state.roundNumber.toString();
@@ -175,12 +177,14 @@ export class GameHUD {
       );
 
       const hasMoves = legalMoves.length > 0;
-      const boneyardHasTiles = state.boneyard.length > 0;
+      const boneyardHasTiles = (state.boneyardCount ?? state.boneyard.length) > 0;
 
       if (!hasMoves && boneyardHasTiles) {
         btnDraw.classList.remove('hidden');
         btnPass.classList.add('hidden');
-        if (btnDrawCount) btnDrawCount.textContent = state.boneyard.length.toString();
+        if (btnDrawCount) {
+          btnDrawCount.textContent = String(state.boneyardCount ?? state.boneyard.length);
+        }
       } else if (!hasMoves && !boneyardHasTiles) {
         btnDraw.classList.add('hidden');
         btnPass.classList.remove('hidden');
@@ -229,7 +233,7 @@ export class GameHUD {
           if (hint) hint.textContent = 'Your Turn: Click a highlighted piece to play';
         }
       } else {
-        if (state.boneyard.length > 0) {
+        if ((state.boneyardCount ?? state.boneyard.length) > 0) {
           if (hint) hint.textContent = 'No playable pieces! You must draw from the boneyard.';
         } else {
           if (hint) hint.textContent = 'No playable pieces and boneyard is empty. Pass turn.';

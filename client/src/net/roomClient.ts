@@ -2,10 +2,59 @@ import { AIDifficulty, EndSide, GameState, PlacedTile, Tile } from '../engine/ty
 import { DominoEngine } from '../engine/dominoEngine.ts';
 import { DominoAI } from '../engine/ai.ts';
 import { soundManager } from '../renderer/sound.ts';
+import { ActivityParticipantView } from './discord.ts';
 
 export interface RoomClientEvents {
   onStateUpdate: (state: GameState) => void;
   onTilePlacedAnim?: (tile: Tile, side: EndSide, seat: number) => void;
+  onNetError?: (message: string) => void;
+}
+
+export interface AuthoritativeConnectOptions {
+  roomId: string;
+  sessionToken: string;
+  useProxy?: boolean;
+}
+
+function createStandaloneLobby(): GameState {
+  return {
+    status: 'lobby',
+    players: [
+      {
+        id: 'local-you',
+        name: 'You',
+        avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
+        isAI: false,
+        hand: [],
+        score: 0,
+        seat: 0,
+        isHost: true,
+        connected: true
+      },
+      {
+        id: 'ai-easy-1',
+        name: 'Maya (AI)',
+        avatar: 'https://cdn.discordapp.com/embed/avatars/1.png',
+        isAI: true,
+        aiDifficulty: 'easy',
+        hand: [],
+        score: 0,
+        seat: 1,
+        connected: true
+      }
+    ],
+    boneyard: [],
+    chain: [],
+    openEnds: { left: null, right: null },
+    currentTurn: 0,
+    firstTurnOfRound: true,
+    consecutivePasses: 0,
+    roundNumber: 1,
+    targetScore: 100,
+    lastAction: 'Welcome to Domino Gravity! Ready to play.',
+    winnerSeat: null,
+    seed: Date.now()
+  };
 }
 
 export class RoomClient {
@@ -16,6 +65,7 @@ export class RoomClient {
   private ws: WebSocket | null = null;
   private localSeat: number = 0;
   public isMultiplayer: boolean = false;
+  public roomId: string | null = null;
   private aiTurnTimeout: ReturnType<typeof setTimeout> | null = null;
   /** `?preview=longchain` seats a QA snake; a real match must wipe it. */
   private layoutPreviewActive = false;
@@ -24,46 +74,7 @@ export class RoomClient {
     this.events = events;
     this.engine = new DominoEngine();
     this.ai = new DominoAI(this.engine);
-
-    // Initial default lobby state
-    this.state = {
-      status: 'lobby',
-      players: [
-        {
-          id: 'player-1',
-          name: 'Player 1',
-          avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
-          isAI: false,
-          hand: [],
-          score: 0,
-          seat: 0,
-          isHost: true,
-          connected: true
-        },
-        {
-          id: 'ai-easy-1',
-          name: 'Maya (AI)',
-          avatar: 'https://cdn.discordapp.com/embed/avatars/1.png',
-          isAI: true,
-          aiDifficulty: 'easy',
-          hand: [],
-          score: 0,
-          seat: 1,
-          connected: true
-        }
-      ],
-      boneyard: [],
-      chain: [],
-      openEnds: { left: null, right: null },
-      currentTurn: 0,
-      firstTurnOfRound: true,
-      consecutivePasses: 0,
-      roundNumber: 1,
-      targetScore: 100,
-      lastAction: 'Welcome to Domino Gravity! Ready to play.',
-      winnerSeat: null,
-      seed: Date.now()
-    };
+    this.state = createStandaloneLobby();
   }
 
   public getState(): GameState {
@@ -74,11 +85,17 @@ export class RoomClient {
     return this.localSeat;
   }
 
+  public isLocalHost(): boolean {
+    const me = this.state.players.find((p) => p.seat === this.localSeat);
+    return !!me?.isHost;
+  }
+
   public isLayoutPreview(): boolean {
     return this.layoutPreviewActive;
   }
 
   public setLocalPlayer(name: string, avatar: string, id: string) {
+    if (this.isMultiplayer) return;
     if (this.state.players[0]) {
       this.state.players[0].name = name;
       this.state.players[0].avatar = avatar;
@@ -88,6 +105,10 @@ export class RoomClient {
   }
 
   public addAI(difficulty: AIDifficulty = 'easy'): boolean {
+    if (this.isMultiplayer) {
+      this.send({ type: 'ADD_AI', difficulty });
+      return true;
+    }
     if (this.state.status !== 'lobby') return false;
     if (this.state.players.length >= 4) return false;
 
@@ -114,18 +135,26 @@ export class RoomClient {
   }
 
   public removePlayer(seat: number): boolean {
-    if (this.state.status !== 'lobby' || seat === 0) return false;
-    if (seat >= this.state.players.length) return false;
+    if (this.isMultiplayer) {
+      this.send({ type: 'REMOVE_SEAT', seat });
+      return true;
+    }
+    if (this.state.status !== 'lobby' || seat === this.localSeat) return false;
+    const target = this.state.players.find((p) => p.seat === seat);
+    if (!target || !target.isAI) return false;
 
-    const removed = this.state.players.splice(seat, 1);
-    // Re-index remaining seats
+    this.state.players = this.state.players.filter((p) => p.seat !== seat);
     this.state.players.forEach((p, idx) => { p.seat = idx; });
-    this.state.lastAction = `Removed ${removed[0].name}`;
+    this.state.lastAction = `Removed ${target.name}`;
     this.emitUpdate();
     return true;
   }
 
   public setTargetScore(score: number) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_TARGET_SCORE', score });
+      return;
+    }
     if (this.state.status !== 'lobby') return;
     this.state.targetScore = score;
     this.state.lastAction = `Target score set to ${score} points`;
@@ -136,11 +165,11 @@ export class RoomClient {
   public loadStandalonePreview(chain: PlacedTile[], localHand: Tile[]) {
     this.layoutPreviewActive = true;
     this.state.status = 'playing';
-    this.state.chain = chain;
     this.state.players[0].hand = localHand.map(t => [t[0], t[1]] as Tile);
     if (this.state.players[1]) {
       this.state.players[1].hand = [[0, 1], [2, 3], [4, 5], [6, 6]];
     }
+    this.state.chain = chain;
     this.state.currentTurn = 0;
     this.state.requiredLeadTile = null;
     this.state.openEnds = {
@@ -157,6 +186,10 @@ export class RoomClient {
    * or highest tile if no double was dealt).
    */
   public startGame() {
+    if (this.isMultiplayer) {
+      this.send({ type: 'START_GAME' });
+      return;
+    }
     if (this.state.players.length < 2) return;
 
     if (this.aiTurnTimeout) {
@@ -173,6 +206,10 @@ export class RoomClient {
   }
 
   public startNextRound() {
+    if (this.isMultiplayer) {
+      this.send({ type: 'NEXT_ROUND' });
+      return;
+    }
     this.exitLayoutPreview();
     this.state.roundNumber++;
     this.engine.startRound(this.state, Date.now());
@@ -182,6 +219,10 @@ export class RoomClient {
   }
 
   public resetMatch() {
+    if (this.isMultiplayer) {
+      this.send({ type: 'RESET_MATCH' });
+      return;
+    }
     this.exitLayoutPreview();
     if (this.aiTurnTimeout) {
       clearTimeout(this.aiTurnTimeout);
@@ -216,6 +257,10 @@ export class RoomClient {
   }
 
   public playTile(tile: Tile, side: EndSide): boolean {
+    if (this.isMultiplayer) {
+      this.send({ type: 'PLAY_TILE', tile, side });
+      return true;
+    }
     const success = this.engine.playTile(this.state, this.localSeat, tile, side);
     if (success) {
       this.emitUpdate();
@@ -225,6 +270,10 @@ export class RoomClient {
   }
 
   public drawTile(): Tile | null {
+    if (this.isMultiplayer) {
+      this.send({ type: 'DRAW_TILE' });
+      return [0, 0];
+    }
     const drawn = this.engine.drawTile(this.state, this.localSeat);
     if (drawn) {
       soundManager.playShuffle();
@@ -235,6 +284,10 @@ export class RoomClient {
   }
 
   public passTurn(): boolean {
+    if (this.isMultiplayer) {
+      this.send({ type: 'PASS_TURN' });
+      return true;
+    }
     const success = this.engine.passTurn(this.state, this.localSeat);
     if (success) {
       this.emitUpdate();
@@ -243,10 +296,16 @@ export class RoomClient {
     return success;
   }
 
+  public reportParticipants(participants: ActivityParticipantView[]) {
+    if (!this.isMultiplayer) return;
+    this.send({ type: 'ACTIVITY_PARTICIPANTS', participants });
+  }
+
   /**
    * Evaluates if the current active turn belongs to an AI, and triggers AI action with delay
    */
   private checkNextTurn() {
+    if (this.isMultiplayer) return;
     if (this.aiTurnTimeout) {
       clearTimeout(this.aiTurnTimeout);
       this.aiTurnTimeout = null;
@@ -270,7 +329,6 @@ export class RoomClient {
     }
 
     if (currentPlayer.isAI) {
-      // Natural human-like thinking delay (700ms - 1100ms)
       const delay = 750 + Math.random() * 350;
       this.aiTurnTimeout = setTimeout(() => {
         this.executeAITurn(currentTurnSeat);
@@ -296,10 +354,8 @@ export class RoomClient {
       if (drawn) {
         soundManager.playShuffle();
         this.emitUpdate();
-        // After drawing, immediately re-evaluate (can AI now play the drawn tile?)
         this.checkNextTurn();
       } else {
-        // Boneyard was empty, pass
         this.engine.passTurn(this.state, aiSeat);
         this.emitUpdate();
         this.checkNextTurn();
@@ -315,33 +371,89 @@ export class RoomClient {
     this.events.onStateUpdate({ ...this.state });
   }
 
-  // Network connection for multiplayer
-  public connectToServer(roomId: string, playerName: string, avatar: string, userId: string) {
+  public connectAuthoritative(options: AuthoritativeConnectOptions): Promise<void> {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws?room=${encodeURIComponent(roomId)}&user=${encodeURIComponent(userId)}&name=${encodeURIComponent(playerName)}&avatar=${encodeURIComponent(avatar)}`;
+    const prefix = options.useProxy ? '/.proxy' : '';
+    const wsUrl = `${protocol}//${host}${prefix}/ws?session=${encodeURIComponent(options.sessionToken)}&room=${encodeURIComponent(options.roomId)}`;
 
-    try {
-      this.ws = new WebSocket(wsUrl);
-      this.isMultiplayer = true;
+    return new Promise((resolve) => {
+      try {
+        this.ws = new WebSocket(wsUrl);
+        this.isMultiplayer = true;
+        this.roomId = options.roomId;
+        this.localSeat = -1;
 
-      this.ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'SYNC_STATE') {
-          this.state = msg.state;
-          if (msg.yourSeat !== undefined) {
+        let settled = false;
+        const settle = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+
+        this.ws.onopen = () => settle();
+
+        this.ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'JOIN_CONFIRM' && msg.yourSeat !== undefined) {
             this.localSeat = msg.yourSeat;
           }
-          this.emitUpdate();
-        }
-      };
+          if (msg.type === 'SYNC_STATE') {
+            this.applyNetworkState(msg.state, msg.yourSeat);
+          }
+          if (msg.type === 'ERROR') {
+            this.events.onNetError?.(msg.message || 'Action rejected');
+          }
+        };
 
-      this.ws.onerror = () => {
-        console.warn('WebSocket connection failed, remaining in local offline mode');
+        this.ws.onerror = () => {
+          console.warn('WebSocket connection failed, remaining in local offline mode');
+          this.isMultiplayer = false;
+          this.ws = null;
+          settle();
+        };
+
+        this.ws.onclose = () => {
+          if (!settled) {
+            this.isMultiplayer = false;
+            settle();
+          }
+        };
+      } catch {
         this.isMultiplayer = false;
-      };
-    } catch {
-      this.isMultiplayer = false;
+        resolve();
+      }
+    });
+  }
+
+  /** @deprecated identity must come from a server session, not query params */
+  public connectToServer(roomId: string, _playerName: string, _avatar: string, _userId: string) {
+    console.warn('connectToServer(room, name, avatar, user) is no longer used. Use connectAuthoritative().');
+    void roomId;
+  }
+
+  private applyNetworkState(state: GameState, yourSeat?: number) {
+    const prevStatus = this.state.status;
+    const prevAction = this.state.lastAction;
+    this.state = state;
+    if (yourSeat !== undefined) this.localSeat = yourSeat;
+
+    if (state.status === 'playing' && prevStatus !== 'playing') {
+      soundManager.playShuffle();
+    }
+    if ((state.status === 'round_end' || state.status === 'match_end') && prevStatus === 'playing') {
+      soundManager.playVictoryFanfare();
+    }
+    if (state.status === 'playing' && state.currentTurn === this.localSeat && prevAction !== state.lastAction) {
+      const me = state.players.find((p) => p.seat === this.localSeat);
+      if (me && !me.isAI) soundManager.playTurnChime();
+    }
+    this.emitUpdate();
+  }
+
+  private send(message: Record<string, unknown>) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
     }
   }
 }

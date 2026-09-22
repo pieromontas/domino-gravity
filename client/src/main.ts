@@ -43,7 +43,8 @@ class DominoGravityApp {
 
     // Setup Room Client
     this.roomClient = new RoomClient({
-      onStateUpdate: (state) => this.onGameStateUpdate(state)
+      onStateUpdate: (state) => this.onGameStateUpdate(state),
+      onNetError: (message) => this.hud.showRuleAlert(message)
     });
 
     // Setup UI components
@@ -95,6 +96,20 @@ class DominoGravityApp {
   private async initDiscord() {
     await discordIntegration.init();
     const user = discordIntegration.user;
+
+    if (discordIntegration.canConnectMultiplayer()) {
+      await this.roomClient.connectAuthoritative({
+        roomId: discordIntegration.getRoomKey(),
+        sessionToken: discordIntegration.sessionToken!,
+        useProxy: discordIntegration.useDiscordProxy()
+      });
+      discordIntegration.onParticipantsChanged((list) => {
+        this.roomClient.reportParticipants(list);
+      });
+      await discordIntegration.refreshParticipants().catch(() => []);
+      return;
+    }
+
     this.roomClient.setLocalPlayer(user.globalName || user.username, user.avatarUrl, user.id);
   }
 

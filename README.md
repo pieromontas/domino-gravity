@@ -12,8 +12,8 @@
 ## 🌟 Features
 
 - **🎮 Dual Mode Support**:
-  - **Discord Activity Mode**: Seamlessly launches inside Discord voice and text channels via `@discord/embedded-app-sdk` with Discord avatar integration and OAuth token exchange.
-  - **Standalone Dev Mode**: Works directly in any web browser without needing Discord credentials for instant local testing and iteration.
+  - **Discord Activity Mode**: Authenticates with the Embedded App SDK, uses the real Discord user for the local seat, subscribes to `ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE`, and seats every participant in one shared Activity room.
+  - **Standalone Dev Mode**: Works in a normal browser as **You** (never a hardcoded host name) with local solo + AI. Optional `?room=` + `?name=` hits the same authoritative server for two-browser testing.
 - **🎲 Classic Double-Six Rules (28 Tiles)**:
   - 2 to 4 players (humans + AI).
   - 7 tiles dealt per player; remaining form the boneyard.
@@ -92,10 +92,16 @@ To play the 3D dominoes game locally right in your web browser:
    ```
 
 3. Open **`http://localhost:5173`** in Chrome, Edge, or Safari.
-   - You can immediately test the 4-seat lobby, add AI players (Easy, Normal, or Hard), set target score, start the match, and play full rounds against AI!
+   - Standalone identity is **You**. Add AI, set the target score, and play a full local match.
    - Toggle camera views (`📐` Top-Down, `🔄` Reset Cam), toggle audio (`🔊`), and inspect valid placement rings on the 3D chain.
 
-4. **Run Engine Unit Tests**:
+4. **Optional local two-browser multiplayer** (no Discord):
+   ```bash
+   npm run dev:all
+   ```
+   Then open `http://localhost:5173/?room=demo&name=Alex` and `http://localhost:5173/?room=demo&name=Sam`. Each tab exchanges a short-lived **dev session** (`POST /api/dev-session`) and joins the same server room. Dev sessions are disabled when `NODE_ENV=production`.
+
+5. **Run tests**:
    ```bash
    npm test
    ```
@@ -125,7 +131,8 @@ To run Domino Gravity as an official Discord Activity inside your server's voice
    ```
 4. Under the **URL Mappings** section (in Activities):
    - Discord routes all activity network traffic through a proxy domain (`https://<app_id>.discordsays.com`).
-   - Add a URL mapping from `/` to your public tunnel or deployed backend URL (see below).
+   - Map `/` to your Azure App Service (or local tunnel) origin so same-origin `/api` and `/ws` work.
+   - Inside the Discord iframe the client prefixes those paths with `/.proxy` (official Activity networking).
 
 ### Step 4: Configure Local `.env`
 Create a `.env` file in the project root based on `.env.example`:
@@ -133,7 +140,10 @@ Create a `.env` file in the project root based on `.env.example`:
 VITE_DISCORD_CLIENT_ID=your_discord_application_id_here
 DISCORD_CLIENT_SECRET=your_discord_client_secret_here
 PORT=3001
+NODE_ENV=development
 ```
+
+`DISCORD_CLIENT_SECRET` is server-only. Do not prefix it with `VITE_`.
 
 ### Step 5: Run with Discord Activity Tunnel
 Because Discord Activities load inside an iframe served over HTTPS, you can expose your local server with Cloudflare Tunnel, ngrok, or the Discord CLI proxy:
@@ -150,22 +160,56 @@ Set the generated HTTPS URL in your Discord Developer Portal URL Mappings, launc
 
 ---
 
+## 🔐 Multiplayer, identity, and server authority
+
+- The Node WebSocket server owns lobby seats, host, AI, chain, turn, draws/passes, scores, and match lifecycle.
+- Clients authenticate first:
+  - Discord: OAuth `authorize` → `POST /api/token` (server exchanges the code with `DISCORD_CLIENT_SECRET`, then calls `users/@me`) → session token + `access_token` for `sdk.commands.authenticate()`.
+  - Browser multiplayer: `POST /api/dev-session` (non-production).
+- WebSocket URL is `/ws?session=<token>&room=<roomKey>`. Client-supplied `user` / `name` / `avatar` query params are ignored.
+- Room keys for Discord are `discord:<guild|noguild>:<channel|nochannel>:<instanceId>`. `instanceId` is unique per Activity launch; channel/guild keep separate launches from colliding. `default-room` is rejected.
+- Each player receives a redacted `SYNC_STATE`: only their own tile values, `handCount` for others, and `boneyardCount` instead of the boneyard.
+- First connected human is host. Host can start (when two ready seats exist) and add/remove AI. AI never replaces a pending Discord participant. If the host disconnects in the lobby, host migrates to the next connected human without resetting the room.
+- Reconnects of the same Discord / session user reclaim the same seat during `ROOM_GRACE_MS` (default 60s). Empty rooms are disposed after that window.
+
 ## 🚢 Deployment
 
-### Production Build
-Build both client and server:
+### Production build (Azure App Service / Node 22)
+
+Azure should build and start the **one** Node process that serves `client/dist` and `/ws`:
+
 ```bash
+npm ci
 npm run build
+node server/dist/server.js
 ```
 
-### Deploying to Cloudflare Pages & Worker or Docker / Railway:
-- **Client**: The `client/dist` directory is a purely static bundle that can be deployed to Cloudflare Pages, Vercel, or AWS S3.
-- **Server**: The `server/dist` directory runs on any standard Node.js 18+ runtime (Railway, Render, Fly.io, or Docker container).
-- The Express server is preconfigured to serve the static client bundle automatically if deployed as a unified single container:
-  ```bash
-  npm run build
-  npm run start --workspace=server
-  ```
+Root `npm start` is the same start command. `/api/health` and WebSockets on `/ws` stay same-origin.
+
+### Required environment variables
+
+| Variable | Where | Notes |
+| --- | --- | --- |
+| `VITE_DISCORD_CLIENT_ID` | Vite **build** and server runtime | Discord Application ID |
+| `DISCORD_CLIENT_SECRET` | Server only | OAuth token exchange. Never ship this to the client. |
+| `NODE_ENV` | Server | `production` on Azure |
+| `PORT` | Server | Injected by Azure App Service |
+| `ROOM_GRACE_MS` | Server, optional | Reconnect / empty-room grace (default `60000`) |
+
+Do not commit `.env` or secrets. In GitHub Actions, store `VITE_DISCORD_CLIENT_ID` as a repository secret so `npm run build` can embed it in the Vite bundle. Set `DISCORD_CLIENT_SECRET` and `VITE_DISCORD_CLIENT_ID` on the App Service configuration, not in source.
+
+### Azure App Service steps
+
+1. Create a **Node 22** Linux Web App.
+2. Startup command: `node server/dist/server.js` (or `npm start`).
+3. Application settings: `NODE_ENV=production`, `VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`. `PORT` is injected.
+4. Enable WebSockets on the App Service.
+5. Point Discord Activity URL mappings at the App Service origin (`/` → the site).
+6. Deploy with the existing GitHub Action (`npm ci && npm run build && npm test`) or zip-deploy the repo after a local `npm ci && npm run build` so `client/dist` and `server/dist` are present.
+
+### Other hosts
+
+The same unified Node server works on Railway, Render, Fly.io, or Docker. Split static+API hosting is possible but not required.
 
 ---
 
