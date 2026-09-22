@@ -19,24 +19,38 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22.x'
+          cache: npm
 
+      # Do not set NODE_ENV=production here. npm ci omits workspace
+      # devDependencies (typescript, vite, vitest, @types/*) when NODE_ENV is
+      # production, which is what broke tsc after PR #4.
       - name: npm ci, build, and test
         env:
           VITE_DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID }}
-          NODE_ENV: production
         run: |
           npm ci
           npm run build --if-present
           npm run test --if-present
 
+      - name: Prune to production dependencies
+        run: npm ci --omit=dev
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: |
+            package.json
+            package-lock.json
+            client/dist
+            client/package.json
+            server/dist
+            server/package.json
+            node_modules
+          include-hidden-files: false
 
   deploy:
     runs-on: ubuntu-latest
@@ -65,4 +79,3 @@ jobs:
           app-name: 'dominoGravity'
           slot-name: 'Production'
           package: .
-          
