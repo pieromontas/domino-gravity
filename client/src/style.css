@@ -209,6 +209,10 @@ html, body, #app {
   border: 1px solid var(--panel-border);
 }
 
+.score-chip .difficulty-tag {
+  margin-top: 0;
+}
+
 .score-chip.active-turn {
   border-color: var(--accent-gold);
   background: rgba(251, 191, 36, 0.15);
@@ -641,11 +645,59 @@ html, body, #app {
   text-transform: uppercase;
   margin-top: 2px;
   display: inline-block;
+  border: 1px solid transparent;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.difficulty-tag.interactive {
+  cursor: pointer;
+}
+
+.difficulty-tag.interactive:hover,
+.difficulty-tag.interactive:focus-visible {
+  filter: brightness(1.2);
+  border-color: currentColor;
 }
 
 .diff-easy { background: rgba(16, 185, 129, 0.2); color: #34D399; }
 .diff-normal { background: rgba(245, 158, 11, 0.2); color: #FBBF24; }
 .diff-hard { background: rgba(239, 68, 68, 0.2); color: #F87171; }
+
+.diff-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.diff-pill.active[data-difficulty="easy"] {
+  background: rgba(16, 185, 129, 0.28);
+  color: #34D399;
+  border-color: #34D399;
+}
+
+.diff-pill.active[data-difficulty="normal"] {
+  background: rgba(245, 158, 11, 0.28);
+  color: #FBBF24;
+  border-color: #FBBF24;
+}
+
+.diff-pill.active[data-difficulty="hard"] {
+  background: rgba(239, 68, 68, 0.28);
+  color: #F87171;
+  border-color: #F87171;
+}
+
+.diff-pill:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 
 /* MATCH SETTINGS */
 .match-setting-row {

@@ -1,4 +1,5 @@
 import { AIDifficulty, EndSide, GameState, PlacedTile, Tile } from '../engine/types.ts';
+import { parseAIDifficulty } from '../engine/aiDifficulty.ts';
 import { DominoEngine } from '../engine/dominoEngine.ts';
 import { DominoAI } from '../engine/ai.ts';
 import { soundManager } from '../renderer/sound.ts';
@@ -105,8 +106,9 @@ export class RoomClient {
   }
 
   public addAI(difficulty: AIDifficulty = 'easy'): boolean {
+    const chosen = parseAIDifficulty(difficulty);
     if (this.isMultiplayer) {
-      this.send({ type: 'ADD_AI', difficulty });
+      this.send({ type: 'ADD_AI', difficulty: chosen });
       return true;
     }
     if (this.state.status !== 'lobby') return false;
@@ -122,14 +124,30 @@ export class RoomClient {
       name: `${nextName} (AI)`,
       avatar: `https://cdn.discordapp.com/embed/avatars/${seat % 5}.png`,
       isAI: true,
-      aiDifficulty: difficulty,
+      aiDifficulty: chosen,
       hand: [],
       score: 0,
       seat,
       connected: true
     });
 
-    this.state.lastAction = `Added ${nextName} (${difficulty.toUpperCase()} AI) to Seat ${seat + 1}`;
+    this.state.lastAction = `Added ${nextName} (${chosen.toUpperCase()} AI) to Seat ${seat + 1}`;
+    this.emitUpdate();
+    return true;
+  }
+
+  public setAIDifficulty(seat: number, difficulty: AIDifficulty): boolean {
+    const chosen = parseAIDifficulty(difficulty);
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_AI_DIFFICULTY', seat, difficulty: chosen });
+      return true;
+    }
+    if (this.state.status !== 'lobby') return false;
+    const target = this.state.players.find((p) => p.seat === seat);
+    if (!target?.isAI) return false;
+
+    target.aiDifficulty = chosen;
+    this.state.lastAction = `${target.name} difficulty set to ${chosen.toUpperCase()}`;
     this.emitUpdate();
     return true;
   }

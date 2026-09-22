@@ -235,3 +235,48 @@ describe('action authorization and redaction', () => {
     room.dispose();
   });
 });
+
+describe('host-controlled AI difficulty', () => {
+  const store = new SessionStore();
+
+  it('lets the host pick and later change a seated bot difficulty', () => {
+    const room = new GameRoom('discord:g:c:ai-diff', { graceMs: 50, aiDelayMs: 10_000 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    expect(room.addAI('user-alex', 'hard').ok).toBe(true);
+    const bot = room.state.players.find((p) => p.isAI);
+    expect(bot?.aiDifficulty).toBe('hard');
+
+    expect(room.setAIDifficulty('user-alex', bot!.seat, 'easy').ok).toBe(true);
+    expect(room.state.players.find((p) => p.isAI)?.aiDifficulty).toBe('easy');
+
+    const guest = room.setAIDifficulty('user-nobody', bot!.seat, 'normal');
+    expect(guest.ok).toBe(false);
+
+    expect(room.startGame('user-alex').ok).toBe(true);
+    expect(room.state.players.find((p) => p.isAI)?.aiDifficulty).toBe('easy');
+    expect(room.setAIDifficulty('user-alex', bot!.seat, 'hard').ok).toBe(false);
+    expect(room.state.players.find((p) => p.isAI)?.aiDifficulty).toBe('easy');
+    room.dispose();
+  });
+
+  it('rejects invalid difficulty and non-host changes', () => {
+    const room = new GameRoom('discord:g:c:ai-diff-auth', { graceMs: 50, aiDelayMs: 0 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    room.addAuthenticatedPlayer(session(store, 'Sam', 'user-sam'), mockSocket());
+    expect(room.addAI('user-alex', 'legendary').ok).toBe(false);
+    expect(room.state.players.some((p) => p.isAI)).toBe(false);
+
+    expect(room.addAI('user-alex').ok).toBe(true);
+    const seat = room.state.players.find((p) => p.isAI)!.seat;
+    expect(room.state.players.find((p) => p.isAI)?.aiDifficulty).toBe('easy');
+    expect(room.setAIDifficulty('user-sam', seat, 'hard').ok).toBe(false);
+    expect(room.setAIDifficulty('user-alex', 0, 'hard').ok).toBe(false);
+    expect(room.handleClientMessage('user-alex', {
+      type: 'SET_AI_DIFFICULTY',
+      seat,
+      difficulty: 'normal'
+    }).ok).toBe(true);
+    expect(room.state.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+    room.dispose();
+  });
+});

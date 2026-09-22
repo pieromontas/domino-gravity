@@ -17,6 +17,33 @@ function clientWithUpdates() {
   return { room, updates };
 }
 
+describe('local AI difficulty selection', () => {
+  it('adds a bot at the chosen difficulty and can change it in the lobby', () => {
+    const { room } = clientWithUpdates();
+    const existing = room.getState().players.find((p) => p.isAI);
+    expect(existing?.aiDifficulty).toBe('easy');
+
+    expect(room.addAI('hard')).toBe(true);
+    const added = room.getState().players.find((p) => p.name.startsWith('Felix'));
+    expect(added?.isAI).toBe(true);
+    expect(added?.aiDifficulty).toBe('hard');
+
+    expect(room.setAIDifficulty(added!.seat, 'normal')).toBe(true);
+    expect(room.getState().players.find((p) => p.seat === added!.seat)?.aiDifficulty).toBe('normal');
+
+    room.startGame();
+    expect(room.getState().status).toBe('playing');
+    expect(room.getState().players.find((p) => p.seat === added!.seat)?.aiDifficulty).toBe('normal');
+    expect(room.setAIDifficulty(added!.seat, 'easy')).toBe(false);
+  });
+
+  it('does not change a human seat difficulty', () => {
+    const { room } = clientWithUpdates();
+    expect(room.setAIDifficulty(room.getLocalSeat(), 'hard')).toBe(false);
+    expect(room.getState().players[0].aiDifficulty).toBeUndefined();
+  });
+});
+
 describe('Room start / rematch clears the table', () => {
   beforeEach(() => {
     vi.useFakeTimers();

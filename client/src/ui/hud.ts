@@ -1,4 +1,5 @@
 import { GameState, Tile } from '../engine/types.ts';
+import { formatAIDifficultyLabel, parseAIDifficulty } from '../engine/aiDifficulty.ts';
 import { RoomClient } from '../net/roomClient.ts';
 import { TableScene } from '../renderer/tableScene.ts';
 import { soundManager } from '../renderer/sound.ts';
@@ -147,9 +148,14 @@ export class GameHUD {
         const chip = document.createElement('div');
         const isActive = p.seat === state.currentTurn;
         chip.className = `score-chip ${isActive ? 'active-turn' : ''}`;
+        const difficulty = parseAIDifficulty(p.aiDifficulty);
+        const diffBadge = p.isAI
+          ? `<span class="difficulty-tag diff-${difficulty}">${formatAIDifficultyLabel(difficulty)}</span>`
+          : '';
         chip.innerHTML = `
           <img class="chip-avatar" src="${p.avatar}" alt="" />
           <span>${p.name}: <strong>${p.score}</strong></span>
+          ${diffBadge}
         `;
         scoresBar.appendChild(chip);
       });
