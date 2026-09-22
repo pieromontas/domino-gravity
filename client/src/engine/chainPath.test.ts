@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   ChainLayoutManager,
+  SNAKE_LIMIT_X,
+  SNAKE_LIMIT_Z,
   TILE_LENGTH,
   TILE_WIDTH,
+  buildAlternatingSnake,
+  chainWorldBounds,
   getPlacementMarkerPosition,
+  recommendedViewForChain,
   tileHalfExtents,
   tilesOverlap,
   yawForPlacedTile
@@ -159,5 +164,60 @@ describe('Engine — only legal ends lock in', () => {
     expect(engine.playTile(state, 0, [0, 1], 'left')).toBe(false);
     expect(engine.playTile(state, 0, [0, 1], 'right')).toBe(false);
     expect(state.chain.length).toBe(1);
+  });
+});
+
+describe('Chain layout — long snakes stay readable', () => {
+  it('lays a late-round snake without overlaps or leaving the felt rails', () => {
+    for (const count of [15, 22, 28]) {
+      const chain = buildAlternatingSnake(count);
+      expect(chain.length).toBe(count);
+
+      for (let i = 0; i < chain.length; i++) {
+        for (let j = i + 1; j < chain.length; j++) {
+          expect(tilesOverlap(chain[i], chain[j])).toBe(false);
+        }
+      }
+
+      const bounds = chainWorldBounds(chain);
+      expect(bounds).not.toBeNull();
+      expect(bounds!.minX).toBeGreaterThanOrEqual(-SNAKE_LIMIT_X - 0.01);
+      expect(bounds!.maxX).toBeLessThanOrEqual(SNAKE_LIMIT_X + 0.01);
+      expect(bounds!.minZ).toBeGreaterThanOrEqual(-SNAKE_LIMIT_Z - 0.01);
+      expect(bounds!.maxZ).toBeLessThanOrEqual(SNAKE_LIMIT_Z + 0.01);
+
+      // Local hand sits near z ≈ 3.35; the snake must stay north of it.
+      expect(bounds!.maxZ).toBeLessThan(3.1);
+    }
+  });
+
+  it('uses an L-junction at the rail instead of stacking the turn on the last tile', () => {
+    const layout = new ChainLayoutManager();
+    const opener = layout.calculateFirstTile([6, 6]);
+    const row: typeof opener[] = [opener];
+    let pip = 6;
+    for (let i = 0; i < 8; i++) {
+      const next = (pip + 1) % 7;
+      row.push(layout.appendTile([pip, next], 'right', pip, row.length));
+      pip = next;
+    }
+
+    const turned = row.find(t => Math.abs(t.position.z) > 0.2);
+    expect(turned).toBeDefined();
+    const beforeTurn = row[row.indexOf(turned!) - 1];
+    expect(beforeTurn).toBeDefined();
+    expect(tilesOverlap(beforeTurn!, turned!)).toBe(false);
+    expect(Math.abs(turned!.position.x)).toBeGreaterThan(Math.abs(beforeTurn!.position.x));
+    expect(Math.abs(turned!.outwardZ)).toBe(1);
+  });
+
+  it('widens the camera when the chain AABB grows', () => {
+    const short = chainWorldBounds(buildAlternatingSnake(4))!;
+    const long = chainWorldBounds(buildAlternatingSnake(24))!;
+    const shortView = recommendedViewForChain(short, 46, 16 / 9);
+    const longView = recommendedViewForChain(long, 46, 16 / 9);
+    expect(longView.radius).toBeGreaterThan(shortView.radius);
+    expect(longView.radius).toBeGreaterThanOrEqual(12);
+    expect(longView.radius).toBeLessThanOrEqual(22);
   });
 });

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ChainBounds, recommendedViewForChain } from '../engine/chainPath.ts';
 
 export type CameraViewMode = 'perspective' | 'topdown';
 
@@ -24,6 +25,10 @@ export class TableScene {
 
   // Reduced motion setting
   public reducedMotion: boolean = false;
+
+  /** Minimum orbit radius needed to keep the current chain in frame. */
+  private chainFitRadius = 12.0;
+  private userRaisedZoom = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -173,23 +178,58 @@ export class TableScene {
       e.preventDefault();
       const zoomSpeed = 0.003;
       this.targetOrbitSpherical.radius += e.deltaY * zoomSpeed;
-      this.targetOrbitSpherical.radius = Math.max(6.5, Math.min(18.0, this.targetOrbitSpherical.radius));
+      this.targetOrbitSpherical.radius = Math.max(6.5, Math.min(22.0, this.targetOrbitSpherical.radius));
+      this.userRaisedZoom = true;
     }, { passive: false });
   }
 
   public setViewMode(mode: CameraViewMode) {
     this.cameraMode = mode;
     if (mode === 'topdown') {
-      this.targetCamPos.set(0, 14.5, 0.01);
-      this.targetLookAt.set(0, 0, 0);
+      const y = Math.max(14.5, this.chainFitRadius + 3);
+      this.targetCamPos.set(this.targetLookAt.x, y, this.targetLookAt.z + 0.01);
     } else {
       this.resetCamera();
     }
   }
 
+  /**
+   * Pulls the camera back so a long snake stays on the felt in view.
+   * Look-at tracks the chain center; radius never goes below the fit size.
+   */
+  public fitToChain(bounds: ChainBounds | null) {
+    if (!bounds) {
+      this.chainFitRadius = 12.0;
+      if (!this.userRaisedZoom) {
+        this.targetOrbitSpherical.radius = 12.0;
+      }
+      this.targetLookAt.set(0, 0, 0.5);
+      if (this.cameraMode === 'topdown') {
+        this.targetCamPos.set(0, 14.5, 0.01);
+        this.targetLookAt.set(0, 0, 0);
+      }
+      return;
+    }
+
+    const view = recommendedViewForChain(bounds, this.camera.fov, this.camera.aspect);
+    this.chainFitRadius = view.radius;
+    this.targetLookAt.set(view.lookAtX, 0, view.lookAtZ);
+
+    if (this.cameraMode === 'topdown') {
+      this.targetCamPos.set(view.lookAtX, view.topY, view.lookAtZ + 0.01);
+      this.targetLookAt.set(view.lookAtX, 0, view.lookAtZ);
+      return;
+    }
+
+    if (!this.userRaisedZoom || this.targetOrbitSpherical.radius < this.chainFitRadius) {
+      this.targetOrbitSpherical.radius = this.chainFitRadius;
+    }
+  }
+
   public resetCamera() {
     this.cameraMode = 'perspective';
-    this.targetOrbitSpherical.set(12.0, Math.PI / 3.4, 0);
+    this.userRaisedZoom = false;
+    this.targetOrbitSpherical.set(Math.max(12.0, this.chainFitRadius), Math.PI / 3.4, 0);
     this.targetLookAt.set(0, 0, 0.5);
   }
 

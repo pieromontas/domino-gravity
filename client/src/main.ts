@@ -10,6 +10,7 @@ import { LobbyUI } from './ui/lobby.ts';
 import { ModalsUI } from './ui/modals.ts';
 import { discordIntegration } from './net/discord.ts';
 import { EndSide, GameState, Tile } from './engine/types.ts';
+import { buildAlternatingSnake, chainWorldBounds } from './engine/chainPath.ts';
 
 class DominoGravityApp {
   private tableScene: TableScene;
@@ -58,9 +59,27 @@ class DominoGravityApp {
 
     this.initInteraction();
     this.initDiscord();
+    this.maybeLoadLayoutPreview();
 
     // Start render loop
     requestAnimationFrame((t) => this.loop(t));
+  }
+
+  /** `?preview=longchain` seats a 24-tile snake + readable local hand for layout QA. */
+  private maybeLoadLayoutPreview() {
+    if (typeof window === 'undefined') return;
+    const preview = new URLSearchParams(window.location.search).get('preview');
+    if (preview !== 'longchain') return;
+    const chain = buildAlternatingSnake(24);
+    this.roomClient.loadStandalonePreview(chain, [
+      [6, 5],
+      [4, 3],
+      [2, 1],
+      [0, 0],
+      [5, 5],
+      [3, 2],
+      [1, 6]
+    ]);
   }
 
   private async initDiscord() {
@@ -184,6 +203,7 @@ class DominoGravityApp {
     // Update 3D Table Scene
     this.chainRenderer.updateChain(state.chain);
     this.handRenderer.updateHands(state.players, localSeat);
+    this.tableScene.fitToChain(chainWorldBounds(state.chain));
 
     // Update UI components
     this.lobbyUI.render(state);
