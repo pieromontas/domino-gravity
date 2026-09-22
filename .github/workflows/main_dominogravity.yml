@@ -38,6 +38,21 @@ jobs:
       - name: Prune to production dependencies
         run: npm ci --omit=dev
 
+      # The pruned ZIP has client/dist + server/dist + production node_modules,
+      # but not tsconfig/sources. Azure OneDeploy/Oryx still runs `npm run build`
+      # unless SCM_DO_BUILD_DURING_DEPLOYMENT=false. Rewrite only the uploaded
+      # package.json so a stray Oryx build is a no-op and cannot invoke tsc.
+      - name: Mark deploy artifact as prebuilt
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text())
+          pkg["scripts"]["build"] = "node -e \"console.log('Using CI-built client/dist and server/dist')\""
+          pkg_path.write_text(json.dumps(pkg, indent=2) + "\n")
+          PY
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
@@ -45,12 +60,13 @@ jobs:
           path: |
             package.json
             package-lock.json
+            .deployment
             client/dist
             client/package.json
             server/dist
             server/package.json
             node_modules
-          include-hidden-files: false
+          include-hidden-files: true
 
   deploy:
     runs-on: ubuntu-latest
@@ -72,6 +88,28 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5F9DCDAFC03C4FD3BEA0AF1D0B5BDDBC }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_84BE035F72454573BD6705ABB79FA6C1 }}
 
+      # ZIP Deploy on Linux App Service runs Oryx when this setting is unset/true.
+      # Ship the already-built client/dist + server/dist from CI instead.
+      - name: Disable Oryx rebuild and set startup command
+        run: |
+          set -euo pipefail
+          RG=$(az webapp list --query "[?name=='dominoGravity'].resourceGroup" -o tsv | head -n1)
+          if [ -z "$RG" ]; then
+            echo "Could not find App Service 'dominoGravity' in this subscription." >&2
+            exit 1
+          fi
+          echo "Updating App Service settings in resource group $RG"
+          az webapp config appsettings set \
+            --name dominoGravity \
+            --resource-group "$RG" \
+            --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              ENABLE_ORYX_BUILD=false
+          az webapp config set \
+            --name dominoGravity \
+            --resource-group "$RG" \
+            --startup-file "node server/dist/server.js"
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -79,3 +117,4 @@ jobs:
           app-name: 'dominoGravity'
           slot-name: 'Production'
           package: .
+          startup-command: 'node server/dist/server.js'
