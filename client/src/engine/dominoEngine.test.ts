@@ -40,6 +40,22 @@ describe('Domino Rules Engine - Strict Rule Enforcement', () => {
     expect(state.requiredLeadTile).not.toBeNull();
   });
 
+  it('does not auto-place the opener — highest double stays in the starter hand', () => {
+    const engine = new DominoEngine();
+    const state = engine.createGame([
+      { id: 'p1', name: 'Human', avatar: '', isAI: false },
+      { id: 'ai1', name: 'Bot', avatar: '', isAI: true, aiDifficulty: 'easy' }
+    ], 100, 12345);
+
+    const lead = state.requiredLeadTile!;
+    expect(state.chain.length).toBe(0);
+    expect(state.openEnds).toEqual({ left: null, right: null });
+    const starter = state.players[state.currentTurn];
+    expect(starter.hand.some((t) =>
+      (t[0] === lead[0] && t[1] === lead[1]) || (t[0] === lead[1] && t[1] === lead[0])
+    )).toBe(true);
+  });
+
   it('enforces starter rule: starter must lead with highest double', () => {
     const engine = new DominoEngine();
     const state = engine.createGame([

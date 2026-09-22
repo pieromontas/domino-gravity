@@ -16,7 +16,9 @@ export class RoomClient {
   private ws: WebSocket | null = null;
   private localSeat: number = 0;
   public isMultiplayer: boolean = false;
-  private aiTurnTimeout: number | null = null;
+  private aiTurnTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** `?preview=longchain` seats a QA snake; a real match must wipe it. */
+  private layoutPreviewActive = false;
 
   constructor(events: RoomClientEvents) {
     this.events = events;
@@ -70,6 +72,10 @@ export class RoomClient {
 
   public getLocalSeat(): number {
     return this.localSeat;
+  }
+
+  public isLayoutPreview(): boolean {
+    return this.layoutPreviewActive;
   }
 
   public setLocalPlayer(name: string, avatar: string, id: string) {
@@ -128,6 +134,7 @@ export class RoomClient {
 
   /** Local-only table snapshot for layout QA (`?preview=longchain`). */
   public loadStandalonePreview(chain: PlacedTile[], localHand: Tile[]) {
+    this.layoutPreviewActive = true;
     this.state.status = 'playing';
     this.state.chain = chain;
     this.state.players[0].hand = localHand.map(t => [t[0], t[1]] as Tile);
@@ -144,9 +151,19 @@ export class RoomClient {
     this.emitUpdate();
   }
 
+  /**
+   * Double-six draw/block does **not** auto-place the opener. The table
+   * stays empty until the starter plays the required lead (highest double,
+   * or highest tile if no double was dealt).
+   */
   public startGame() {
     if (this.state.players.length < 2) return;
 
+    if (this.aiTurnTimeout) {
+      clearTimeout(this.aiTurnTimeout);
+      this.aiTurnTimeout = null;
+    }
+    this.exitLayoutPreview();
     this.state.roundNumber = 1;
     this.state.players.forEach(p => { p.score = 0; });
     this.engine.startRound(this.state, Date.now());
@@ -156,6 +173,7 @@ export class RoomClient {
   }
 
   public startNextRound() {
+    this.exitLayoutPreview();
     this.state.roundNumber++;
     this.engine.startRound(this.state, Date.now());
     soundManager.playShuffle();
@@ -164,15 +182,37 @@ export class RoomClient {
   }
 
   public resetMatch() {
+    this.exitLayoutPreview();
+    if (this.aiTurnTimeout) {
+      clearTimeout(this.aiTurnTimeout);
+      this.aiTurnTimeout = null;
+    }
     this.state.status = 'lobby';
     this.state.chain = [];
     this.state.boneyard = [];
+    this.state.openEnds = { left: null, right: null };
+    this.state.requiredLeadTile = null;
     this.state.players.forEach(p => {
       p.hand = [];
       p.score = 0;
     });
     this.state.lastAction = 'Returned to lobby';
     this.emitUpdate();
+  }
+
+  /** Drop QA snake + `?preview=longchain` so a real deal starts on a clean felt. */
+  private exitLayoutPreview() {
+    this.layoutPreviewActive = false;
+    if (typeof window === 'undefined' || typeof window.history === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('preview') !== 'longchain') return;
+      url.searchParams.delete('preview');
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, '', next);
+    } catch {
+      // Ignore URL cleanup when history is unavailable (tests / embedded).
+    }
   }
 
   public playTile(tile: Tile, side: EndSide): boolean {
@@ -232,7 +272,7 @@ export class RoomClient {
     if (currentPlayer.isAI) {
       // Natural human-like thinking delay (700ms - 1100ms)
       const delay = 750 + Math.random() * 350;
-      this.aiTurnTimeout = window.setTimeout(() => {
+      this.aiTurnTimeout = setTimeout(() => {
         this.executeAITurn(currentTurnSeat);
       }, delay);
     }

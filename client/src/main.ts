@@ -59,6 +59,7 @@ class DominoGravityApp {
 
     this.initInteraction();
     this.initDiscord();
+    this.initPreviewExit();
     this.maybeLoadLayoutPreview();
 
     // Start render loop
@@ -80,6 +81,15 @@ class DominoGravityApp {
       [3, 2],
       [1, 6]
     ]);
+  }
+
+  /** Leave the QA snake and deal a real double-six match on an empty table. */
+  private initPreviewExit() {
+    const btn = document.getElementById('btn-exit-preview');
+    btn?.addEventListener('click', () => {
+      this.chainRenderer.clear();
+      this.roomClient.startGame();
+    });
   }
 
   private async initDiscord() {
@@ -200,10 +210,17 @@ class DominoGravityApp {
   private onGameStateUpdate(state: GameState) {
     const localSeat = this.roomClient.getLocalSeat();
 
-    // Update 3D Table Scene
-    this.chainRenderer.updateChain(state.chain);
+    // Lobby / new deal / rematch: felt must match state (empty until the
+    // starter plays the required lead — rules do not auto-place an opener).
+    if (state.status === 'lobby' || state.chain.length === 0) {
+      this.chainRenderer.clear();
+    } else {
+      this.chainRenderer.updateChain(state.chain);
+    }
     this.handRenderer.updateHands(state.players, localSeat);
     this.tableScene.fitToChain(chainWorldBounds(state.chain));
+
+    this.syncPreviewBanner();
 
     // Update UI components
     this.lobbyUI.render(state);
@@ -214,6 +231,12 @@ class DominoGravityApp {
       this.chainRenderer.clearHighlights();
       this.selectedTileForPlay = null;
     }
+  }
+
+  private syncPreviewBanner() {
+    const banner = document.getElementById('preview-banner');
+    if (!banner) return;
+    banner.classList.toggle('hidden', !this.roomClient.isLayoutPreview());
   }
 
   private loop(currentTime: number) {

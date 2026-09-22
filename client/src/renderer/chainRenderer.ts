@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { EndSide, PlacedTile } from '../engine/types.ts';
+import { EndSide, PlacedTile, Tile } from '../engine/types.ts';
 import { createDominoMesh } from './tileMesh.ts';
 import { getPlacementMarkerPosition } from '../engine/chainPath.ts';
+import { diffRenderedChain } from './chainSync.ts';
 
 export class ChainRenderer {
   private scene: THREE.Scene;
@@ -22,25 +23,50 @@ export class ChainRenderer {
     this.scene.add(this.highlightGroup);
   }
 
+  /** Ids currently in the Three.js chain group (tests / debug). */
+  public getRenderedIds(): string[] {
+    return Array.from(this.tileMeshes.keys());
+  }
+
   /**
-   * Synchronizes 3D placed tiles with GameState chain
+   * Synchronizes 3D placed tiles with GameState chain.
+   * Replaces leftover preview / previous-round meshes even when the new
+   * chain is non-empty (ids like `placed-0` are reused every deal).
    */
   public updateChain(chain: PlacedTile[]) {
-    // Add missing tiles
-    for (let i = 0; i < chain.length; i++) {
-      const pt = chain[i];
-      if (!this.tileMeshes.has(pt.id)) {
-        const mesh = createDominoMesh(pt.tile);
-        mesh.position.set(pt.position.x, pt.position.y, pt.position.z);
-        mesh.rotation.y = pt.rotationY;
-        this.chainGroup.add(mesh);
-        this.tileMeshes.set(pt.id, mesh);
+    if (chain.length === 0) {
+      this.clear();
+      return;
+    }
+
+    const rendered = Array.from(this.tileMeshes.entries()).map(([id, mesh]) => ({
+      id,
+      tile: (mesh.userData.tile as Tile | undefined) ?? [-1, -1]
+    }));
+    const { removeIds, add, update } = diffRenderedChain(rendered, chain);
+
+    for (const id of removeIds) {
+      const mesh = this.tileMeshes.get(id);
+      if (mesh) {
+        this.chainGroup.remove(mesh);
+        this.tileMeshes.delete(id);
       }
     }
 
-    // Clean up if new round
-    if (chain.length === 0 && this.tileMeshes.size > 0) {
-      this.clear();
+    for (const pt of add) {
+      const mesh = createDominoMesh(pt.tile);
+      mesh.userData.tile = pt.tile;
+      mesh.position.set(pt.position.x, pt.position.y, pt.position.z);
+      mesh.rotation.y = pt.rotationY;
+      this.chainGroup.add(mesh);
+      this.tileMeshes.set(pt.id, mesh);
+    }
+
+    for (const pt of update) {
+      const mesh = this.tileMeshes.get(pt.id);
+      if (!mesh) continue;
+      mesh.position.set(pt.position.x, pt.position.y, pt.position.z);
+      mesh.rotation.y = pt.rotationY;
     }
   }
 
