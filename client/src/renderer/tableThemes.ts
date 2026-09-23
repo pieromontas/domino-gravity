@@ -85,15 +85,15 @@ export function createDominicanFeltTexture(): THREE.CanvasTexture {
     const cross = Math.round(size * 0.075);
     const inset = Math.round(size * 0.07);
 
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = '#002D62';
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = '#0A3A86';
     ctx.fillRect(inset, inset, mid - inset - cross / 2, mid - inset - cross / 2);
     ctx.fillRect(mid + cross / 2, mid + cross / 2, mid - inset - cross / 2, mid - inset - cross / 2);
-    ctx.fillStyle = '#CE1126';
+    ctx.fillStyle = '#C8102E';
     ctx.fillRect(mid + cross / 2, inset, mid - inset - cross / 2, mid - inset - cross / 2);
     ctx.fillRect(inset, mid + cross / 2, mid - inset - cross / 2, mid - inset - cross / 2);
 
-    ctx.globalAlpha = 0.38;
+    ctx.globalAlpha = 0.52;
     ctx.fillStyle = '#F7F4EE';
     ctx.fillRect(mid - cross / 2, inset, cross, size - inset * 2);
     ctx.fillRect(inset, mid - cross / 2, size - inset * 2, cross);
@@ -196,8 +196,8 @@ export function buildDominicanTable(): THREE.Group {
   felt.receiveShadow = true;
   tableGroup.add(felt);
 
-  const rimThickness = 0.42;
-  const rimHeight = 0.46;
+  const rimThickness = 0.52;
+  const rimHeight = 0.58;
   const outer = feltSize + rimThickness * 2;
   const longGeo = new THREE.BoxGeometry(outer, rimHeight, rimThickness);
   const shortGeo = new THREE.BoxGeometry(rimThickness, rimHeight, feltSize);
