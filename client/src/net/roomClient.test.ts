@@ -44,6 +44,29 @@ describe('local AI difficulty selection', () => {
   });
 });
 
+describe('local table selection', () => {
+  it('defaults to classic and can switch maps in the lobby', () => {
+    const { room } = clientWithUpdates();
+    expect(room.getState().tableId).toBe('classic');
+
+    room.setTable('dominican');
+    expect(room.getState().tableId).toBe('dominican');
+    expect(room.getState().lastAction).toMatch(/República Dominicana/);
+
+    room.startGame();
+    expect(room.getState().status).toBe('playing');
+    expect(room.getState().tableId).toBe('dominican');
+    room.setTable('classic');
+    expect(room.getState().tableId).toBe('dominican');
+
+    room.resetMatch();
+    expect(room.getState().status).toBe('lobby');
+    expect(room.getState().tableId).toBe('dominican');
+    room.setTable('classic');
+    expect(room.getState().tableId).toBe('classic');
+  });
+});
+
 describe('Room start / rematch clears the table', () => {
   beforeEach(() => {
     vi.useFakeTimers();

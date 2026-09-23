@@ -48,6 +48,7 @@ function decisionState(hand: Tile[], difficulty: AIDifficulty): GameState {
     consecutivePasses: 0,
     roundNumber: 1,
     targetScore: 100,
+    tableId: 'classic',
     lastAction: '',
     winnerSeat: null,
     seed: 1

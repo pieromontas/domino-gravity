@@ -280,3 +280,42 @@ describe('host-controlled AI difficulty', () => {
     room.dispose();
   });
 });
+
+describe('host-controlled table selection', () => {
+  const store = new SessionStore();
+
+  it('defaults to the classic table and lets the host change it in the lobby', () => {
+    const room = new GameRoom('discord:g:c:table', { graceMs: 50, aiDelayMs: 10_000 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    room.addAuthenticatedPlayer(session(store, 'Sam', 'user-sam'), mockSocket());
+    expect(room.state.tableId).toBe('classic');
+
+    expect(room.setTable('user-sam', 'dominican').ok).toBe(false);
+    expect(room.state.tableId).toBe('classic');
+
+    expect(room.setTable('user-alex', 'not-a-map').ok).toBe(false);
+    expect(room.state.tableId).toBe('classic');
+
+    expect(room.setTable('user-alex', 'dominican').ok).toBe(true);
+    expect(room.state.tableId).toBe('dominican');
+    expect(room.state.lastAction).toMatch(/República Dominicana/);
+
+    expect(room.addAI('user-alex', 'easy').ok).toBe(true);
+    expect(room.startGame('user-alex').ok).toBe(true);
+    expect(room.state.tableId).toBe('dominican');
+    expect(room.setTable('user-alex', 'classic').ok).toBe(false);
+    expect(room.state.tableId).toBe('dominican');
+
+    expect(room.resetMatch('user-alex').ok).toBe(true);
+    expect(room.state.tableId).toBe('dominican');
+    room.dispose();
+  });
+
+  it('accepts SET_TABLE over the client message bus', () => {
+    const room = new GameRoom('discord:g:c:table-msg', { graceMs: 50, aiDelayMs: 0 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    expect(room.handleClientMessage('user-alex', { type: 'SET_TABLE', tableId: 'dominican' }).ok).toBe(true);
+    expect(room.state.tableId).toBe('dominican');
+    room.dispose();
+  });
+});

@@ -1,10 +1,12 @@
-import { AIDifficulty, GameState } from '../engine/types.ts';
+import { AIDifficulty, GameState, TableId } from '../engine/types.ts';
 import {
   cycleAIDifficulty,
   formatAIDifficultyLabel,
   parseAIDifficulty
 } from '../engine/aiDifficulty.ts';
+import { parseTableId } from '../engine/tableId.ts';
 import { RoomClient } from '../net/roomClient.ts';
+import { tableMusic } from '../renderer/tableMusic.ts';
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (ch) => ({
@@ -65,6 +67,28 @@ export class LobbyUI {
         this.syncDifficultyPills();
       });
     });
+
+    const tableCards = document.querySelectorAll('.table-card');
+    tableCards.forEach((card) => {
+      card.addEventListener('click', (e) => {
+        if (!this.roomClient.isLocalHost()) return;
+        const target = e.currentTarget as HTMLElement;
+        const tableId = parseTableId(target.getAttribute('data-table'));
+        this.roomClient.setTable(tableId);
+      });
+    });
+
+    const musicBtn = document.getElementById('btn-lobby-music');
+    musicBtn?.addEventListener('click', () => {
+      tableMusic.toggleMute();
+      this.syncMusicControls(this.roomClient.getState().tableId);
+    });
+
+    const volume = document.getElementById('lobby-music-volume') as HTMLInputElement | null;
+    volume?.addEventListener('input', () => {
+      tableMusic.setVolume(Number(volume.value) / 100);
+      this.syncMusicControls(this.roomClient.getState().tableId);
+    });
   }
 
   private syncDifficultyPills(isHost = this.roomClient.isLocalHost()) {
@@ -75,6 +99,38 @@ export class LobbyUI {
       el.classList.toggle('active', diff === this.pendingDifficulty);
       el.disabled = !isHost;
     });
+  }
+
+  private syncTableCards(tableId: TableId, isHost: boolean) {
+    const cards = document.querySelectorAll('.table-card');
+    cards.forEach((card) => {
+      const el = card as HTMLButtonElement;
+      const id = parseTableId(el.getAttribute('data-table'));
+      el.classList.toggle('active', id === tableId);
+      el.disabled = !isHost;
+      el.title = isHost
+        ? `Play on the ${id === 'dominican' ? 'Dominican patio' : 'classic oval'} table`
+        : 'Only the host can change the table';
+    });
+    this.syncMusicControls(tableId);
+  }
+
+  private syncMusicControls(tableId: TableId) {
+    const row = document.getElementById('table-music-row');
+    if (row) row.classList.toggle('hidden', tableId !== 'dominican');
+
+    const btn = document.getElementById('btn-lobby-music');
+    if (btn) {
+      const on = !tableMusic.isMuted();
+      btn.textContent = on ? '🎵 On' : '🔇 Off';
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    const volume = document.getElementById('lobby-music-volume') as HTMLInputElement | null;
+    if (volume) {
+      volume.value = String(Math.round(tableMusic.getVolume() * 100));
+      volume.disabled = tableMusic.isMuted();
+    }
   }
 
   public render(state: GameState) {
@@ -169,6 +225,7 @@ export class LobbyUI {
     });
 
     this.syncDifficultyPills(isHost);
+    this.syncTableCards(parseTableId(state.tableId), isHost);
 
     let meta = document.getElementById('lobby-meta');
     if (!meta) {

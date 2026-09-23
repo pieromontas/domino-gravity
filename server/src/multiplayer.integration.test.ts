@@ -10,6 +10,7 @@ interface Packet {
     chain: unknown[];
     players: Array<{ id: string; name: string; seat?: number; hand: unknown[]; handCount?: number; isHost?: boolean; isAI?: boolean; aiDifficulty?: string }>;
     lastAction: string;
+    tableId?: string;
     requiredLeadTile?: [number, number] | null;
     boneyard?: unknown[];
     boneyardCount?: number;
@@ -185,6 +186,35 @@ describe('two clients share a room while a third room stays isolated', () => {
     const playGuest = await guest.waitFor('SYNC_STATE', (p) => p.state?.status === 'playing');
     expect(playHost.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
     expect(playGuest.state?.players.find((p) => p.isAI)?.aiDifficulty).toBe('normal');
+
+    guest.ws.close();
+    host.ws.close();
+  });
+
+  it('syncs host-chosen table to every client', async () => {
+    server = createGameServer({ graceMs: 200, aiDelayMs: 10_000, allowDevSessions: true });
+    const port = await server.listen(0);
+
+    const alex = server.sessions.createDevSession({ displayName: 'Alex', userId: 'alex' });
+    const sam = server.sessions.createDevSession({ displayName: 'Sam', userId: 'sam' });
+    const roomId = 'browser:table-map';
+
+    const host = await connectClient(port, alex.token, roomId);
+    const guest = await connectClient(port, sam.token, roomId);
+    const joinHost = await host.waitFor('SYNC_STATE', (p) => (p.state?.players.length ?? 0) >= 2);
+    const joinGuest = await guest.waitFor('SYNC_STATE', (p) => (p.state?.players.length ?? 0) >= 2);
+    expect(joinHost.state?.tableId ?? 'classic').toBe('classic');
+    expect(joinGuest.state?.tableId ?? 'classic').toBe('classic');
+
+    guest.send({ type: 'SET_TABLE', tableId: 'dominican' });
+    const denied = await guest.waitFor('ERROR');
+    expect(denied.message).toMatch(/host/i);
+
+    host.send({ type: 'SET_TABLE', tableId: 'dominican' });
+    const changedHost = await host.waitFor('SYNC_STATE', (p) => p.state?.tableId === 'dominican');
+    const changedGuest = await guest.waitFor('SYNC_STATE', (p) => p.state?.tableId === 'dominican');
+    expect(changedHost.state?.tableId).toBe('dominican');
+    expect(changedGuest.state?.tableId).toBe('dominican');
 
     guest.ws.close();
     host.ws.close();

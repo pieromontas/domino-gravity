@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import { ChainBounds, recommendedViewForChain } from '../engine/chainPath.ts';
+import { TableId } from '../engine/types.ts';
+import { parseTableId } from '../engine/tableId.ts';
+import {
+  buildLightingFor,
+  buildTableFor,
+  disposeObject3D,
+  TABLE_THEMES
+} from './tableThemes.ts';
 
 export type CameraViewMode = 'perspective' | 'topdown';
 
@@ -30,10 +38,15 @@ export class TableScene {
   private chainFitRadius = 12.0;
   private userRaisedZoom = false;
 
+  private tableGroup: THREE.Group | null = null;
+  private lightsGroup: THREE.Group | null = null;
+  private currentTableId: TableId = 'classic';
+
   constructor(container: HTMLElement) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0E1217);
+    this.scene.background = new THREE.Color(TABLE_THEMES.classic.background);
+    this.scene.fog = new THREE.Fog(TABLE_THEMES.classic.fog, 22, 48);
 
     // Camera setup with responsive FOV
     const aspect = container.clientWidth / container.clientHeight;
@@ -49,96 +62,49 @@ export class TableScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = TABLE_THEMES.classic.exposure;
     container.appendChild(this.renderer.domElement);
 
-    this.setupLighting();
-    this.buildTable();
+    this.applyTable('classic');
     this.initControls();
 
     window.addEventListener('resize', this.onResize);
   }
 
-  private setupLighting() {
-    // Ambient fill light (warm charcoal/slate tone)
-    const ambientLight = new THREE.AmbientLight(0xFFF8F0, 0.9);
-    this.scene.add(ambientLight);
+  /**
+   * Rebuilds table mesh + lighting for the host-chosen map.
+   * Classic stays visually identical to the original oval casino table.
+   */
+  public applyTable(tableId: TableId | undefined) {
+    const next = parseTableId(tableId);
+    if (this.tableGroup && this.lightsGroup && this.currentTableId === next) return;
 
-    // Warm overhead key spotlight casting soft shadows on dominoes
-    const mainLight = new THREE.DirectionalLight(0xFFFAEE, 1.8);
-    mainLight.position.set(4, 14, 5);
-    mainLight.castShadow = true;
-    mainLight.shadow.mapSize.width = 2048;
-    mainLight.shadow.mapSize.height = 2048;
-    mainLight.shadow.camera.near = 0.5;
-    mainLight.shadow.camera.far = 30;
-    mainLight.shadow.camera.left = -7;
-    mainLight.shadow.camera.right = 7;
-    mainLight.shadow.camera.top = 7;
-    mainLight.shadow.camera.bottom = -7;
-    mainLight.shadow.bias = -0.0005;
-    this.scene.add(mainLight);
+    if (this.tableGroup) {
+      this.scene.remove(this.tableGroup);
+      disposeObject3D(this.tableGroup);
+      this.tableGroup = null;
+    }
+    if (this.lightsGroup) {
+      this.scene.remove(this.lightsGroup);
+      disposeObject3D(this.lightsGroup);
+      this.lightsGroup = null;
+    }
 
-    // Subtle blue-tinted rim/bounce light
-    const bounceLight = new THREE.DirectionalLight(0x7890AA, 0.45);
-    bounceLight.position.set(-6, 8, -6);
-    this.scene.add(bounceLight);
-  }
+    this.currentTableId = next;
+    const theme = TABLE_THEMES[next];
+    this.scene.background = new THREE.Color(theme.background);
+    this.scene.fog = new THREE.Fog(theme.fog, next === 'dominican' ? 18 : 22, next === 'dominican' ? 42 : 48);
+    this.renderer.toneMappingExposure = theme.exposure;
 
-  private buildTable() {
-    const tableGroup = new THREE.Group();
+    this.lightsGroup = buildLightingFor(next);
+    this.tableGroup = buildTableFor(next);
+    this.scene.add(this.lightsGroup);
+    this.scene.add(this.tableGroup);
 
-    // Table Felt Surface: Rich deep casino emerald felt
-    const feltGeo = new THREE.CylinderGeometry(6.2, 6.2, 0.4, 64);
-    const feltMat = new THREE.MeshStandardMaterial({
-      color: 0x1B4332,
-      roughness: 0.85,
-      metalness: 0.02
-    });
-    const felt = new THREE.Mesh(feltGeo, feltMat);
-    felt.position.y = -0.2;
-    felt.receiveShadow = true;
-    tableGroup.add(felt);
-
-    // Felt Inset Ring / Line
-    const ringGeo = new THREE.RingGeometry(4.8, 4.86, 64);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xD4AF37,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.25
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.005;
-    tableGroup.add(ring);
-
-    // Table Wood Bevel / Rim: Warm mahogany / walnut
-    const rimGeo = new THREE.TorusGeometry(6.3, 0.38, 20, 64);
-    const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x3E2723,
-      roughness: 0.4,
-      metalness: 0.1
-    });
-    const rim = new THREE.Mesh(rimGeo, rimMat);
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = -0.05;
-    rim.receiveShadow = true;
-    rim.castShadow = true;
-    tableGroup.add(rim);
-
-    // Table Base / Pedestal
-    const baseGeo = new THREE.CylinderGeometry(5.8, 4.2, 1.5, 32);
-    const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x24140E,
-      roughness: 0.5
-    });
-    const base = new THREE.Mesh(baseGeo, baseMat);
-    base.position.y = -1.15;
-    base.castShadow = true;
-    tableGroup.add(base);
-
-    this.scene.add(tableGroup);
+    this.chainFitRadius = theme.defaultOrbitRadius;
+    if (!this.userRaisedZoom) {
+      this.targetOrbitSpherical.radius = theme.defaultOrbitRadius;
+    }
   }
 
   private initControls() {
@@ -198,10 +164,11 @@ export class TableScene {
    * Look-at tracks the chain center; radius never goes below the fit size.
    */
   public fitToChain(bounds: ChainBounds | null) {
+    const idleRadius = TABLE_THEMES[this.currentTableId].defaultOrbitRadius;
     if (!bounds) {
-      this.chainFitRadius = 12.0;
+      this.chainFitRadius = idleRadius;
       if (!this.userRaisedZoom) {
-        this.targetOrbitSpherical.radius = 12.0;
+        this.targetOrbitSpherical.radius = idleRadius;
       }
       this.targetLookAt.set(0, 0, 0.5);
       if (this.cameraMode === 'topdown') {
@@ -229,7 +196,8 @@ export class TableScene {
   public resetCamera() {
     this.cameraMode = 'perspective';
     this.userRaisedZoom = false;
-    this.targetOrbitSpherical.set(Math.max(12.0, this.chainFitRadius), Math.PI / 3.4, 0);
+    const idleRadius = TABLE_THEMES[this.currentTableId].defaultOrbitRadius;
+    this.targetOrbitSpherical.set(Math.max(idleRadius, this.chainFitRadius), Math.PI / 3.4, 0);
     this.targetLookAt.set(0, 0, 0.5);
   }
 
@@ -273,6 +241,8 @@ export class TableScene {
 
   public destroy() {
     window.removeEventListener('resize', this.onResize);
+    if (this.tableGroup) disposeObject3D(this.tableGroup);
+    if (this.lightsGroup) disposeObject3D(this.lightsGroup);
     this.renderer.dispose();
   }
 }
