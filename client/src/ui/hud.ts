@@ -3,6 +3,8 @@ import { formatAIDifficultyLabel, parseAIDifficulty } from '../engine/aiDifficul
 import { RoomClient } from '../net/roomClient.ts';
 import { TableScene } from '../renderer/tableScene.ts';
 import { soundManager } from '../renderer/sound.ts';
+import { tableMusic } from '../renderer/tableMusic.ts';
+import { parseTableId } from '../engine/tableId.ts';
 import { DominoEngine } from '../engine/dominoEngine.ts';
 
 export class GameHUD {
@@ -53,6 +55,14 @@ export class GameHUD {
       btnSound.addEventListener('click', () => {
         const enabled = soundManager.toggleSound();
         btnSound.textContent = enabled ? '🔊' : '🔇';
+      });
+    }
+
+    const btnMusic = document.getElementById('btn-music-toggle');
+    if (btnMusic) {
+      btnMusic.addEventListener('click', () => {
+        tableMusic.toggleMute();
+        this.syncMusicButton(this.roomClient.getState());
       });
     }
 
@@ -110,6 +120,7 @@ export class GameHUD {
     }
 
     this.hudContainer.classList.remove('hidden');
+    this.syncMusicButton(state);
 
     const localSeat = this.roomClient.getLocalSeat();
     const isMyTurn = state.currentTurn === localSeat && state.status === 'playing';
@@ -205,6 +216,19 @@ export class GameHUD {
 
     // Manage turn timer reset
     this.resetTimer();
+  }
+
+  private syncMusicButton(state: GameState) {
+    const btnMusic = document.getElementById('btn-music-toggle');
+    if (!btnMusic) return;
+    const onDominican = parseTableId(state.tableId) === 'dominican';
+    btnMusic.classList.toggle('hidden', !onDominican);
+    const unmuted = !tableMusic.isMuted();
+    btnMusic.textContent = unmuted ? '🎵' : '🔇';
+    btnMusic.title = unmuted
+      ? 'Mute patio music'
+      : 'Play patio music (original synthesized loop)';
+    btnMusic.classList.toggle('music-off', tableMusic.isMuted());
   }
 
   private renderHandTray(state: GameState, localSeat: number, isMyTurn: boolean) {

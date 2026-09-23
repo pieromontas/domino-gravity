@@ -5,6 +5,9 @@ export type EndSide = 'left' | 'right';
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 
+/** Selectable lobby table / map. `classic` is the original oval casino table. */
+export type TableId = 'classic' | 'dominican';
+
 export interface PlacedTile {
   id: string;
   tile: Tile;
@@ -60,6 +63,8 @@ export interface GameState {
   consecutivePasses: number;
   roundNumber: number;
   targetScore: number;
+  /** Host-chosen table theme. Defaults to the original oval table. */
+  tableId: TableId;
   lastAction: string;
   winnerSeat: number | null;
   requiredLeadTile?: Tile | null;

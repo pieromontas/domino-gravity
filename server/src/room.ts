@@ -2,6 +2,7 @@ import { WebSocket } from 'ws';
 import { DominoAI } from './engine/ai.js';
 import { DominoEngine } from './engine/dominoEngine.js';
 import { isAIDifficulty } from './engine/aiDifficulty.js';
+import { DEFAULT_TABLE_ID, formatTableLabel, isTableId } from './engine/tableId.js';
 import { AIDifficulty, EndSide, GameState, Player, Tile } from './engine/types.js';
 import { redactGameState } from './redact.js';
 import { PlayerSession } from './session.js';
@@ -37,6 +38,7 @@ export function createEmptyLobbyState(): GameState {
     consecutivePasses: 0,
     roundNumber: 1,
     targetScore: 100,
+    tableId: DEFAULT_TABLE_ID,
     lastAction: 'Waiting for players…',
     winnerSeat: null,
     seed: Date.now()
@@ -300,6 +302,21 @@ export class GameRoom {
     return { ok: true };
   }
 
+  public setTable(actorUserId: string, tableId: unknown): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Table can only be changed in the lobby.' };
+    }
+    if (!isTableId(tableId)) {
+      return { ok: false, code: 'BAD_TABLE', message: 'Table must be classic or dominican.' };
+    }
+    this.state.tableId = tableId;
+    this.state.lastAction = `Table set to ${formatTableLabel(tableId)}.`;
+    this.broadcastState();
+    return { ok: true };
+  }
+
   public startGame(actorUserId: string): ActionResult {
     const auth = this.requireHost(actorUserId);
     if (!auth.ok) return auth;
@@ -403,6 +420,8 @@ export class GameRoom {
         return this.removeSeat(userId, Number(data.seat));
       case 'SET_TARGET_SCORE':
         return this.setTargetScore(userId, Number(data.score));
+      case 'SET_TABLE':
+        return this.setTable(userId, data.tableId);
       case 'START_GAME':
         return this.startGame(userId);
       case 'PLAY_TILE':

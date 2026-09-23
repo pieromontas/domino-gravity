@@ -52,6 +52,9 @@
             <button id="btn-sound-toggle" class="icon-btn glass-panel" title="Toggle Audio">
               🔊
             </button>
+            <button id="btn-music-toggle" class="icon-btn glass-panel hidden" title="Patio music (off by default)">
+              🎵
+            </button>
           </div>
         </header>
 
@@ -136,6 +139,43 @@
                 <button type="button" class="diff-pill active" data-difficulty="easy">Easy</button>
                 <button type="button" class="diff-pill" data-difficulty="normal">Normal</button>
                 <button type="button" class="diff-pill" data-difficulty="hard">Hard</button>
+              </div>
+            </div>
+
+            <div class="match-setting-block">
+              <label>Table</label>
+              <div class="table-selector-cards" id="table-selector">
+                <button type="button" class="table-card active" data-table="classic">
+                  <span class="table-card-swatch table-swatch-classic" aria-hidden="true"></span>
+                  <span class="table-card-copy">
+                    <strong>Classic</strong>
+                    <small>Oval casino felt</small>
+                  </span>
+                </button>
+                <button type="button" class="table-card" data-table="dominican">
+                  <span class="table-card-swatch table-swatch-dr" aria-hidden="true"></span>
+                  <span class="table-card-copy">
+                    <strong>República Dominicana</strong>
+                    <small>Square patio table</small>
+                  </span>
+                </button>
+              </div>
+              <div class="table-music-row" id="table-music-row">
+                <span class="table-music-label">Patio music</span>
+                <div class="table-music-controls">
+                  <button type="button" id="btn-lobby-music" class="music-toggle-btn" title="Patio music is off by default">
+                    🔇 Off
+                  </button>
+                  <input
+                    id="lobby-music-volume"
+                    class="music-volume"
+                    type="range"
+                    min="0"
+                    max="60"
+                    value="22"
+                    aria-label="Patio music volume"
+                  />
+                </div>
               </div>
             </div>
 

@@ -10,6 +10,8 @@ import { LobbyUI } from './ui/lobby.ts';
 import { ModalsUI } from './ui/modals.ts';
 import { discordIntegration } from './net/discord.ts';
 import { EndSide, GameState, Tile } from './engine/types.ts';
+import { parseTableId } from './engine/tableId.ts';
+import { tableMusic } from './renderer/tableMusic.ts';
 import { buildAlternatingSnake, chainWorldBounds } from './engine/chainPath.ts';
 
 class DominoGravityApp {
@@ -233,7 +235,9 @@ class DominoGravityApp {
       this.chainRenderer.updateChain(state.chain);
     }
     this.handRenderer.updateHands(state.players, localSeat);
+    this.tableScene.applyTable(parseTableId(state.tableId));
     this.tableScene.fitToChain(chainWorldBounds(state.chain));
+    this.syncTableMusic(state);
 
     this.syncPreviewBanner();
 
@@ -245,6 +249,14 @@ class DominoGravityApp {
     if (state.status !== 'playing') {
       this.chainRenderer.clearHighlights();
       this.selectedTileForPlay = null;
+    }
+  }
+
+  private syncTableMusic(state: GameState) {
+    if (parseTableId(state.tableId) === 'dominican') {
+      tableMusic.start();
+    } else {
+      tableMusic.stop();
     }
   }
 

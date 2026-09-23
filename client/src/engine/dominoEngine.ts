@@ -50,6 +50,7 @@ export class DominoEngine {
       consecutivePasses: 0,
       roundNumber: 1,
       targetScore,
+      tableId: 'classic',
       lastAction: 'Game started',
       winnerSeat: null,
       seed

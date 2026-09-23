@@ -1,5 +1,6 @@
-import { AIDifficulty, EndSide, GameState, PlacedTile, Tile } from '../engine/types.ts';
+import { AIDifficulty, EndSide, GameState, PlacedTile, TableId, Tile } from '../engine/types.ts';
 import { parseAIDifficulty } from '../engine/aiDifficulty.ts';
+import { DEFAULT_TABLE_ID, formatTableLabel, parseTableId } from '../engine/tableId.ts';
 import { DominoEngine } from '../engine/dominoEngine.ts';
 import { DominoAI } from '../engine/ai.ts';
 import { soundManager } from '../renderer/sound.ts';
@@ -52,6 +53,7 @@ function createStandaloneLobby(): GameState {
     consecutivePasses: 0,
     roundNumber: 1,
     targetScore: 100,
+    tableId: DEFAULT_TABLE_ID,
     lastAction: 'Welcome to Domino Gravity! Ready to play.',
     winnerSeat: null,
     seed: Date.now()
@@ -176,6 +178,18 @@ export class RoomClient {
     if (this.state.status !== 'lobby') return;
     this.state.targetScore = score;
     this.state.lastAction = `Target score set to ${score} points`;
+    this.emitUpdate();
+  }
+
+  public setTable(tableId: TableId) {
+    const chosen = parseTableId(tableId);
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_TABLE', tableId: chosen });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    this.state.tableId = chosen;
+    this.state.lastAction = `Table set to ${formatTableLabel(chosen)}`;
     this.emitUpdate();
   }
 
@@ -453,7 +467,7 @@ export class RoomClient {
   private applyNetworkState(state: GameState, yourSeat?: number) {
     const prevStatus = this.state.status;
     const prevAction = this.state.lastAction;
-    this.state = state;
+    this.state = { ...state, tableId: parseTableId(state.tableId) };
     if (yourSeat !== undefined) this.localSeat = yourSeat;
 
     if (state.status === 'playing' && prevStatus !== 'playing') {
