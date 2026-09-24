@@ -227,7 +227,7 @@ export class GameHUD {
     btnMusic.textContent = unmuted ? '🎵' : '🔇';
     btnMusic.title = unmuted
       ? 'Mute patio music'
-      : 'Play patio music (original synthesized loop)';
+      : 'Play patio music (bachata playlist)';
     btnMusic.classList.toggle('music-off', tableMusic.isMuted());
   }
 
