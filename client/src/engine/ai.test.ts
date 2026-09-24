@@ -3,6 +3,7 @@ import { DominoAI } from './ai.ts';
 import { DominoEngine } from './dominoEngine.ts';
 import { AIDifficulty, GameState, Tile } from './types.ts';
 import { cycleAIDifficulty, formatAIDifficultyLabel, parseAIDifficulty } from './aiDifficulty.ts';
+import { emptyPartnershipFields } from './partnership.ts';
 
 function decisionState(hand: Tile[], difficulty: AIDifficulty): GameState {
   return {
@@ -51,6 +52,7 @@ function decisionState(hand: Tile[], difficulty: AIDifficulty): GameState {
     tableId: 'classic',
     lastAction: '',
     winnerSeat: null,
+    ...emptyPartnershipFields(),
     seed: 1
   };
 }

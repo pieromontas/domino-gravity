@@ -21,6 +21,24 @@ export interface PlacedTile {
   outwardZ: number;
 }
 
+export type TeamId = 0 | 1;
+
+export type TableCallKind = 'pase' | 'pase_corrido' | 'capicua';
+
+export interface Team {
+  id: TeamId;
+  name: string;
+  seats: [number, number];
+  score: number;
+}
+
+export interface TableCall {
+  kind: TableCallKind;
+  seat: number;
+  name: string;
+  text: string;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -36,6 +54,8 @@ export interface Player {
   connected: boolean;
   /** Discord participant reserved a seat but has not authenticated yet. */
   pendingJoin?: boolean;
+  /** Set in 4-player partnership; seats 0+2 vs 1+3 by default. */
+  teamId?: TeamId;
 }
 
 export interface LegalMove {
@@ -67,11 +87,20 @@ export interface GameState {
   lastAction: string;
   winnerSeat: number | null;
   requiredLeadTile?: Tile | null;
+  /** Host-enabled 2v2 partnership. Default on when four seats are filled. */
+  partnership: boolean;
+  teams: Team[];
+  tableCall: TableCall | null;
+  /** Seat that last passed; next successful play is "pase y corrido". */
+  lastPassSeat: number | null;
   roundSummary?: {
     reason: 'domino' | 'blocked';
     winnerSeat: number;
+    winnerTeamId?: TeamId;
     pointsWon: number;
-    playerPips: { seat: number; name: string; pips: number }[];
+    capicua?: boolean;
+    playerPips: { seat: number; name: string; pips: number; teamId?: TeamId }[];
+    teamPips?: { teamId: TeamId; name: string; pips: number }[];
   };
   seed: number;
 }

@@ -61,6 +61,12 @@
         <!-- Scores bar -->
         <div class="scores-bar" id="scores-bar"></div>
 
+        <!-- Dominican table calls (Pase / Pase y corrido / Capicúa) -->
+        <div id="table-call" class="table-call hidden" aria-live="polite">
+          <span id="table-call-seat" class="table-call-seat"></span>
+          <strong id="table-call-text" class="table-call-text">¡Pase!</strong>
+        </div>
+
         <!-- Action Log Banner -->
         <div class="action-banner glass-panel" id="action-banner">
           <span id="action-text">Game started</span>
@@ -87,6 +93,10 @@
           <div class="hand-tray glass-panel">
             <div class="hand-tray-header">
               <span class="hand-tray-title" id="hand-tray-title">YOUR HAND</span>
+              <div class="hand-view-toggle" role="group" aria-label="Hand view">
+                <button type="button" id="btn-hand-fan" class="hand-view-btn active" title="Fan view">Fan</button>
+                <button type="button" id="btn-hand-inspect" class="hand-view-btn" title="Inspect row">Inspect</button>
+              </div>
               <span class="hand-tray-hint" id="hand-tray-hint">Select a highlighted domino to play</span>
             </div>
             <div class="hand-tiles-list" id="hand-tiles-list"></div>
@@ -177,6 +187,26 @@
                   />
                 </div>
               </div>
+            </div>
+
+            <div id="partnership-settings" class="match-setting-block hidden">
+              <label>4-player teams</label>
+              <div class="score-selector-pills" id="partnership-pills">
+                <button type="button" class="mode-pill active" data-partnership="on">Partnership</button>
+                <button type="button" class="mode-pill" data-partnership="off">Free-for-all</button>
+              </div>
+              <div class="team-name-row">
+                <label class="team-name-field team-a">
+                  <span>Team A</span>
+                  <input id="team-name-0" class="team-name-input" type="text" maxlength="20" placeholder="Equipo A" />
+                </label>
+                <label class="team-name-field team-b">
+                  <span>Team B</span>
+                  <input id="team-name-1" class="team-name-input" type="text" maxlength="20" placeholder="Equipo B" />
+                </label>
+              </div>
+              <p class="team-help">Default partners sit opposite (seats 1+3 vs 2+4). Host can swap partners or seat them opposite again.</p>
+              <button type="button" id="btn-seat-opposite" class="btn-secondary btn-seat-opposite">Seat partners opposite</button>
             </div>
 
             <div class="lobby-actions-row">

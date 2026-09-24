@@ -1,4 +1,5 @@
-import { AIDifficulty, GameState, TableId } from '../engine/types.ts';
+import { AIDifficulty, GameState, TableId, TeamId } from '../engine/types.ts';
+import { isPartnershipActive } from '../engine/partnership.ts';
 import {
   cycleAIDifficulty,
   formatAIDifficultyLabel,
@@ -89,6 +90,28 @@ export class LobbyUI {
       tableMusic.setVolume(Number(volume.value) / 100);
       this.syncMusicControls(this.roomClient.getState().tableId);
     });
+
+    document.querySelectorAll('.mode-pill').forEach((pill) => {
+      pill.addEventListener('click', (e) => {
+        if (!this.roomClient.isLocalHost()) return;
+        const target = e.currentTarget as HTMLElement;
+        this.roomClient.setPartnership(target.getAttribute('data-partnership') === 'on');
+      });
+    });
+
+    const seatOpposite = document.getElementById('btn-seat-opposite');
+    seatOpposite?.addEventListener('click', () => {
+      if (!this.roomClient.isLocalHost()) return;
+      this.roomClient.seatPartnersOpposite();
+    });
+
+    for (const teamId of [0, 1] as TeamId[]) {
+      const input = document.getElementById(`team-name-${teamId}`) as HTMLInputElement | null;
+      input?.addEventListener('change', () => {
+        if (!this.roomClient.isLocalHost()) return;
+        this.roomClient.setTeamName(teamId, input.value);
+      });
+    }
   }
 
   private syncDifficultyPills(isHost = this.roomClient.isLocalHost()) {
@@ -170,12 +193,22 @@ export class LobbyUI {
           ? `<button class="btn-kick" data-seat="${seatIdx}">Remove AI</button>`
           : '';
 
+        const team = state.teams.find((t) => t.id === player.teamId);
+        const teamClass = player.teamId === 0 ? 'team-a' : player.teamId === 1 ? 'team-b' : '';
+        if (teamClass && state.partnership) card.classList.add(teamClass);
+        const teamBadge = team && state.partnership
+          ? (isHost
+            ? `<button type="button" class="team-tag ${teamClass} interactive" data-seat="${seatIdx}" title="Move to the other team">${escapeHtml(team.name)}</button>`
+            : `<span class="team-tag ${teamClass}">${escapeHtml(team.name)}</span>`)
+          : '';
+
         card.innerHTML = `
           <div class="seat-player-meta">
             <img class="seat-avatar" src="${escapeHtml(player.avatar)}" alt="" />
             <div class="seat-name-box">
               <span class="seat-player-name">${escapeHtml(player.name)}</span>
               ${diffBadge}
+              ${teamBadge}
             </div>
           </div>
           ${kickBtn}
@@ -191,6 +224,10 @@ export class LobbyUI {
             this.roomClient.setAIDifficulty(seatIdx, cycleAIDifficulty(player.aiDifficulty));
           });
         }
+        const teamBtn = card.querySelector('.team-tag.interactive');
+        teamBtn?.addEventListener('click', () => {
+          this.roomClient.moveSeatToOtherTeam(seatIdx);
+        });
       } else {
         card.className = 'seat-card empty';
         card.innerHTML = `<span>+ Seat ${seatIdx + 1} Empty</span>`;
@@ -226,6 +263,7 @@ export class LobbyUI {
 
     this.syncDifficultyPills(isHost);
     this.syncTableCards(parseTableId(state.tableId), isHost);
+    this.syncPartnershipControls(state, isHost);
 
     let meta = document.getElementById('lobby-meta');
     if (!meta) {
@@ -239,5 +277,34 @@ export class LobbyUI {
       ? this.roomClient.roomId.replace(/^discord:[^:]+:[^:]+:/, 'activity · ')
       : 'local table';
     meta.textContent = `${local?.name || 'You'} · ${roomLabel}`;
+  }
+
+  private syncPartnershipControls(state: GameState, isHost: boolean) {
+    const block = document.getElementById('partnership-settings');
+    if (!block) return;
+    const show = state.players.length === 4;
+    block.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    document.querySelectorAll('.mode-pill').forEach((pill) => {
+      const el = pill as HTMLButtonElement;
+      const on = el.getAttribute('data-partnership') === 'on';
+      el.classList.toggle('active', on === state.partnership);
+      el.disabled = !isHost;
+    });
+
+    for (const teamId of [0, 1] as TeamId[]) {
+      const input = document.getElementById(`team-name-${teamId}`) as HTMLInputElement | null;
+      if (!input) continue;
+      const name = state.teams.find((t) => t.id === teamId)?.name ?? '';
+      if (document.activeElement !== input) input.value = name;
+      input.disabled = !isHost || !state.partnership;
+    }
+
+    const opposite = document.getElementById('btn-seat-opposite') as HTMLButtonElement | null;
+    if (opposite) {
+      opposite.disabled = !isHost || !isPartnershipActive(state);
+      opposite.style.opacity = opposite.disabled ? '0.5' : '1';
+    }
   }
 }

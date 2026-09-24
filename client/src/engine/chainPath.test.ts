@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ChainLayoutManager,
+  HAND_CLEARANCE_Z,
   SNAKE_LIMIT_X,
   SNAKE_LIMIT_Z,
   TILE_LENGTH,
@@ -186,8 +187,9 @@ describe('Chain layout — long snakes stay readable', () => {
       expect(bounds!.minZ).toBeGreaterThanOrEqual(-SNAKE_LIMIT_Z - 0.01);
       expect(bounds!.maxZ).toBeLessThanOrEqual(SNAKE_LIMIT_Z + 0.01);
 
-      // Local hand sits near z ≈ 3.35; the snake must stay north of it.
-      expect(bounds!.maxZ).toBeLessThan(3.1);
+      // Local / north hand rails sit beyond HAND_CLEARANCE_Z.
+      expect(bounds!.maxZ).toBeLessThan(HAND_CLEARANCE_Z);
+      expect(bounds!.minZ).toBeGreaterThan(-HAND_CLEARANCE_Z);
     }
   });
 

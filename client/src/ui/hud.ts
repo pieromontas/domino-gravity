@@ -1,4 +1,5 @@
 import { GameState, Tile } from '../engine/types.ts';
+import { isPartnershipActive } from '../engine/partnership.ts';
 import { formatAIDifficultyLabel, parseAIDifficulty } from '../engine/aiDifficulty.ts';
 import { RoomClient } from '../net/roomClient.ts';
 import { TableScene } from '../renderer/tableScene.ts';
@@ -18,7 +19,11 @@ export class GameHUD {
   private ruleToastTimeout: number | null = null;
 
   private selectedTile: Tile | null = null;
+  private handView: 'fan' | 'inspect' = 'fan';
+  private dragFrom: number | null = null;
+  private lastCallKey = '';
   public onTrayTileClick?: (tile: Tile, index: number) => void;
+  public onHandViewChange?: (mode: 'fan' | 'inspect') => void;
 
   constructor(roomClient: RoomClient, tableScene: TableScene, engine: DominoEngine) {
     this.roomClient = roomClient;
@@ -89,6 +94,24 @@ export class GameHUD {
         }
       });
     }
+
+    const btnFan = document.getElementById('btn-hand-fan');
+    const btnInspect = document.getElementById('btn-hand-inspect');
+    btnFan?.addEventListener('click', () => this.setHandView('fan'));
+    btnInspect?.addEventListener('click', () => this.setHandView('inspect'));
+  }
+
+  public getHandView(): 'fan' | 'inspect' {
+    return this.handView;
+  }
+
+  private setHandView(mode: 'fan' | 'inspect') {
+    this.handView = mode;
+    document.getElementById('btn-hand-fan')?.classList.toggle('active', mode === 'fan');
+    document.getElementById('btn-hand-inspect')?.classList.toggle('active', mode === 'inspect');
+    document.getElementById('hand-tray-container')?.classList.toggle('inspect-view', mode === 'inspect');
+    this.onHandViewChange?.(mode);
+    this.render(this.roomClient.getState());
   }
 
   public setSelectedTile(tile: Tile | null) {
@@ -124,6 +147,7 @@ export class GameHUD {
 
     const localSeat = this.roomClient.getLocalSeat();
     const isMyTurn = state.currentTurn === localSeat && state.status === 'playing';
+    document.getElementById('hand-tray-container')?.classList.toggle('my-turn-glow', isMyTurn);
     const activePlayer = state.players[state.currentTurn];
 
     // Current turn card
@@ -136,8 +160,13 @@ export class GameHUD {
       turnName.textContent = isMyTurn ? 'Your Turn' : activePlayer.name;
       if (turnCard) {
         turnCard.style.borderLeftColor = isMyTurn ? '#10B981' : '#F59E0B';
+        turnCard.classList.toggle('my-turn', isMyTurn);
+        turnCard.classList.toggle('their-turn', !isMyTurn && state.status === 'playing');
       }
     }
+
+    this.renderTableCall(state);
+    this.renderScores(state);
 
     // Boneyard & round info
     const boneyardCount = document.getElementById('boneyard-count');
@@ -150,27 +179,6 @@ export class GameHUD {
 
     const targetScoreDisplay = document.getElementById('target-score-display');
     if (targetScoreDisplay) targetScoreDisplay.textContent = state.targetScore.toString();
-
-    // Scores bar
-    const scoresBar = document.getElementById('scores-bar');
-    if (scoresBar) {
-      scoresBar.innerHTML = '';
-      state.players.forEach(p => {
-        const chip = document.createElement('div');
-        const isActive = p.seat === state.currentTurn;
-        chip.className = `score-chip ${isActive ? 'active-turn' : ''}`;
-        const difficulty = parseAIDifficulty(p.aiDifficulty);
-        const diffBadge = p.isAI
-          ? `<span class="difficulty-tag diff-${difficulty}">${formatAIDifficultyLabel(difficulty)}</span>`
-          : '';
-        chip.innerHTML = `
-          <img class="chip-avatar" src="${p.avatar}" alt="" />
-          <span>${p.name}: <strong>${p.score}</strong></span>
-          ${diffBadge}
-        `;
-        scoresBar.appendChild(chip);
-      });
-    }
 
     // Action banner
     const actionText = document.getElementById('action-text');
@@ -235,12 +243,16 @@ export class GameHUD {
     const list = document.getElementById('hand-tiles-list');
     const title = document.getElementById('hand-tray-title');
     const hint = document.getElementById('hand-tray-hint');
+    document.getElementById('btn-hand-fan')?.classList.toggle('active', this.handView === 'fan');
+    document.getElementById('btn-hand-inspect')?.classList.toggle('active', this.handView === 'inspect');
     if (!list || !title) return;
 
     const myPlayer = state.players[localSeat];
     const hand = myPlayer?.hand || [];
 
-    title.textContent = `YOUR PIECES (${hand.length})`;
+    title.textContent = this.handView === 'inspect'
+      ? `INSPECT (${hand.length}) · drag to rearrange`
+      : `YOUR PIECES (${hand.length})`;
 
     if (state.status !== 'playing') {
       if (hint) hint.textContent = state.status === 'round_end' ? 'Round Completed' : 'Match Ended';
@@ -289,7 +301,9 @@ export class GameHUD {
 
       const el = document.createElement('div');
       el.className = `tray-domino ${isLegal ? 'playable' : 'unplayable'} ${isSelected ? 'selected' : ''}`;
-      el.title = `Domino [${tile[0]}|${tile[1]}]`;
+      el.title = `Domino [${tile[0]}|${tile[1]}] — drag to rearrange`;
+      el.dataset.index = String(idx);
+      el.draggable = false;
 
       const canvasTop = this.createPipCanvas(tile[0]);
       const canvasBot = this.createPipCanvas(tile[1]);
@@ -303,28 +317,150 @@ export class GameHUD {
       el.children[0].appendChild(canvasTop);
       el.children[2].appendChild(canvasBot);
 
-      el.addEventListener('click', () => {
-        if (!isMyTurn) {
-          this.showRuleAlert(`⚠️ Rule: Please wait for your turn! Currently ${state.players[state.currentTurn]?.name}'s turn.`);
-          return;
-        }
-
-        if (!isLegal) {
-          if (state.requiredLeadTile) {
-            this.showRuleAlert(`⚠️ Rule: You MUST lead with your highest double [${state.requiredLeadTile[0]}|${state.requiredLeadTile[1]}]!`);
-          } else if (state.chain.length > 0) {
-            this.showRuleAlert(`⚠️ Rule: [${tile[0]}|${tile[1]}] cannot be played. Open chain ends are [${state.openEnds.left}] and [${state.openEnds.right}].`);
-          }
-          return;
-        }
-
-        if (this.onTrayTileClick) {
-          this.onTrayTileClick(tile, idx);
-        }
-      });
-
+      this.bindTrayTile(el, tile, idx, isMyTurn, isLegal, state);
       list.appendChild(el);
     });
+  }
+
+  private bindTrayTile(
+    el: HTMLElement,
+    tile: Tile,
+    idx: number,
+    isMyTurn: boolean,
+    isLegal: boolean,
+    state: GameState
+  ) {
+    let pointerId: number | null = null;
+    let startX = 0;
+    let dragged = false;
+
+    el.addEventListener('pointerdown', (e) => {
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      dragged = false;
+      this.dragFrom = idx;
+      el.classList.add('dragging');
+      el.setPointerCapture(e.pointerId);
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (pointerId !== e.pointerId || this.dragFrom === null) return;
+      if (Math.abs(e.clientX - startX) > 8) dragged = true;
+      if (!dragged) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tray-domino') as HTMLElement | null;
+      document.querySelectorAll('.tray-domino.drop-target').forEach((n) => n.classList.remove('drop-target'));
+      if (over && over !== el) over.classList.add('drop-target');
+    });
+
+    const finish = (e: PointerEvent) => {
+      if (pointerId !== e.pointerId) return;
+      el.classList.remove('dragging');
+      document.querySelectorAll('.tray-domino.drop-target').forEach((n) => n.classList.remove('drop-target'));
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tray-domino') as HTMLElement | null;
+      const from = this.dragFrom;
+      this.dragFrom = null;
+      pointerId = null;
+      if (dragged && from !== null && over && over !== el) {
+        const to = Number(over.dataset.index);
+        if (Number.isInteger(to)) this.commitHandReorder(from, to);
+        return;
+      }
+      if (dragged) return;
+      if (!isMyTurn) {
+        this.showRuleAlert(`⚠️ Rule: Please wait for your turn! Currently ${state.players[state.currentTurn]?.name}'s turn.`);
+        return;
+      }
+      if (!isLegal) {
+        if (state.requiredLeadTile) {
+          this.showRuleAlert(`⚠️ Rule: You MUST lead with your highest double [${state.requiredLeadTile[0]}|${state.requiredLeadTile[1]}]!`);
+        } else if (state.chain.length > 0) {
+          this.showRuleAlert(`⚠️ Rule: [${tile[0]}|${tile[1]}] cannot be played. Open chain ends are [${state.openEnds.left}] and [${state.openEnds.right}].`);
+        }
+        return;
+      }
+      this.onTrayTileClick?.(tile, idx);
+    };
+
+    el.addEventListener('pointerup', finish);
+    el.addEventListener('pointercancel', finish);
+  }
+
+  private commitHandReorder(from: number, to: number) {
+    const seat = this.roomClient.getLocalSeat();
+    const hand = [...(this.roomClient.getState().players[seat]?.hand || [])];
+    if (from < 0 || to < 0 || from >= hand.length || to >= hand.length || from === to) return;
+    const [moved] = hand.splice(from, 1);
+    hand.splice(to, 0, moved);
+    this.roomClient.reorderHand(hand);
+  }
+
+  private renderScores(state: GameState) {
+    const scoresBar = document.getElementById('scores-bar');
+    if (!scoresBar) return;
+    scoresBar.innerHTML = '';
+    scoresBar.classList.toggle('team-scores', isPartnershipActive(state));
+
+    if (isPartnershipActive(state)) {
+      state.teams.forEach((team) => {
+        const wrap = document.createElement('div');
+        const hasTurn = team.seats.includes(state.currentTurn);
+        wrap.className = `team-chip team-${team.id} ${hasTurn ? 'active-turn' : 'idle-seat'}`;
+        const members = state.players
+          .filter((p) => p.teamId === team.id)
+          .map((p) => {
+            const on = p.seat === state.currentTurn ? ' seat-on' : '';
+            return `<span class="team-member${on}">${p.name}</span>`;
+          })
+          .join('<span class="team-plus">+</span>');
+        wrap.innerHTML = `
+          <div class="team-chip-head">
+            <strong>${team.name}</strong>
+            <span class="team-score">${team.score}</span>
+          </div>
+          <div class="team-chip-members">${members}</div>
+        `;
+        scoresBar.appendChild(wrap);
+      });
+      return;
+    }
+
+    state.players.forEach((p) => {
+      const chip = document.createElement('div');
+      const isActive = p.seat === state.currentTurn;
+      chip.className = `score-chip ${isActive ? 'active-turn' : 'idle-seat'}`;
+      const difficulty = parseAIDifficulty(p.aiDifficulty);
+      const diffBadge = p.isAI
+        ? `<span class="difficulty-tag diff-${difficulty}">${formatAIDifficultyLabel(difficulty)}</span>`
+        : '';
+      chip.innerHTML = `
+        <img class="chip-avatar ${isActive ? 'ring-active' : ''}" src="${p.avatar}" alt="" />
+        <span>${p.name}: <strong>${p.score}</strong></span>
+        ${diffBadge}
+      `;
+      scoresBar.appendChild(chip);
+    });
+  }
+
+  private renderTableCall(state: GameState) {
+    const call = document.getElementById('table-call');
+    const text = document.getElementById('table-call-text');
+    const seat = document.getElementById('table-call-seat');
+    if (!call || !text || !seat) return;
+
+    if (!state.tableCall || state.status === 'lobby') {
+      call.classList.add('hidden');
+      return;
+    }
+
+    const key = `${state.tableCall.kind}:${state.tableCall.seat}:${state.tableCall.text}`;
+    text.textContent = state.tableCall.text;
+    seat.textContent = state.tableCall.name;
+    call.className = `table-call call-${state.tableCall.kind}`;
+    if (key !== this.lastCallKey) {
+      this.lastCallKey = key;
+      call.classList.remove('hidden');
+      soundManager.playCallChime(state.tableCall.kind);
+    }
   }
 
   private updateTraySelection() {

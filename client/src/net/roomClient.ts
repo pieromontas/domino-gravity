@@ -1,8 +1,18 @@
-import { AIDifficulty, EndSide, GameState, PlacedTile, TableId, Tile } from '../engine/types.ts';
+import { AIDifficulty, EndSide, GameState, PlacedTile, TableId, TeamId, Tile } from '../engine/types.ts';
 import { parseAIDifficulty } from '../engine/aiDifficulty.ts';
 import { DEFAULT_TABLE_ID, formatTableLabel, parseTableId } from '../engine/tableId.ts';
 import { DominoEngine } from '../engine/dominoEngine.ts';
 import { DominoAI } from '../engine/ai.ts';
+import {
+  emptyPartnershipFields,
+  resetMatchScores,
+  sameTileMultiset,
+  seatPartnersOpposite,
+  setPartnershipEnabled,
+  setTeamName,
+  swapSeatToOtherTeam,
+  syncPartnershipRoster
+} from '../engine/partnership.ts';
 import { soundManager } from '../renderer/sound.ts';
 import { ActivityParticipantView } from './discord.ts';
 
@@ -56,6 +66,7 @@ function createStandaloneLobby(): GameState {
     tableId: DEFAULT_TABLE_ID,
     lastAction: 'Welcome to Domino Gravity! Ready to play.',
     winnerSeat: null,
+    ...emptyPartnershipFields(),
     seed: Date.now()
   };
 }
@@ -133,6 +144,7 @@ export class RoomClient {
       connected: true
     });
 
+    syncPartnershipRoster(this.state);
     this.state.lastAction = `Added ${nextName} (${chosen.toUpperCase()} AI) to Seat ${seat + 1}`;
     this.emitUpdate();
     return true;
@@ -165,6 +177,7 @@ export class RoomClient {
 
     this.state.players = this.state.players.filter((p) => p.seat !== seat);
     this.state.players.forEach((p, idx) => { p.seat = idx; });
+    syncPartnershipRoster(this.state);
     this.state.lastAction = `Removed ${target.name}`;
     this.emitUpdate();
     return true;
@@ -191,6 +204,67 @@ export class RoomClient {
     this.state.tableId = chosen;
     this.state.lastAction = `Table set to ${formatTableLabel(chosen)}`;
     this.emitUpdate();
+  }
+
+  public setPartnership(enabled: boolean) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_PARTNERSHIP', enabled });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    if (!setPartnershipEnabled(this.state, enabled)) return;
+    this.state.lastAction = enabled
+      ? 'Partnership mode on — opposite seats are partners.'
+      : 'Free-for-all scoring — each seat scores alone.';
+    this.emitUpdate();
+  }
+
+  public setTeamName(teamId: TeamId, name: string) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_TEAM_NAME', teamId, name });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    if (this.state.players.length !== 4) return;
+    syncPartnershipRoster(this.state);
+    if (!setTeamName(this.state, teamId, name)) return;
+    this.state.lastAction = `Team renamed to ${this.state.teams[teamId]?.name}`;
+    this.emitUpdate();
+  }
+
+  public moveSeatToOtherTeam(seat: number) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'MOVE_SEAT_TEAM', seat });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    if (!swapSeatToOtherTeam(this.state, seat)) return;
+    this.state.lastAction = 'Host swapped partners.';
+    this.emitUpdate();
+  }
+
+  public seatPartnersOpposite() {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SEAT_PARTNERS_OPPOSITE' });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    if (!seatPartnersOpposite(this.state)) return;
+    this.state.lastAction = 'Partners seated opposite (0+2 vs 1+3).';
+    this.emitUpdate();
+  }
+
+  public reorderHand(hand: Tile[]): boolean {
+    if (this.isMultiplayer) {
+      this.send({ type: 'REORDER_HAND', hand });
+      return true;
+    }
+    const me = this.state.players[this.localSeat];
+    if (!me || this.state.status !== 'playing') return false;
+    if (!sameTileMultiset(me.hand, hand)) return false;
+    me.hand = hand.map((t) => [t[0], t[1]] as Tile);
+    this.emitUpdate();
+    return true;
   }
 
   /** Local-only table snapshot for layout QA (`?preview=longchain`). */
@@ -230,7 +304,10 @@ export class RoomClient {
     }
     this.exitLayoutPreview();
     this.state.roundNumber = 1;
-    this.state.players.forEach(p => { p.score = 0; });
+    resetMatchScores(this.state);
+    if (this.state.players.length === 4) {
+      syncPartnershipRoster(this.state);
+    }
     this.engine.startRound(this.state, Date.now());
     soundManager.playShuffle();
     this.emitUpdate();
@@ -269,6 +346,10 @@ export class RoomClient {
       p.hand = [];
       p.score = 0;
     });
+    this.state.tableCall = null;
+    this.state.lastPassSeat = null;
+    this.state.roundSummary = undefined;
+    resetMatchScores(this.state);
     this.state.lastAction = 'Returned to lobby';
     this.emitUpdate();
   }
@@ -467,7 +548,15 @@ export class RoomClient {
   private applyNetworkState(state: GameState, yourSeat?: number) {
     const prevStatus = this.state.status;
     const prevAction = this.state.lastAction;
-    this.state = { ...state, tableId: parseTableId(state.tableId) };
+    this.state = {
+      ...emptyPartnershipFields(),
+      ...state,
+      tableId: parseTableId(state.tableId),
+      partnership: !!state.partnership,
+      teams: state.teams ?? [],
+      tableCall: state.tableCall ?? null,
+      lastPassSeat: state.lastPassSeat ?? null
+    };
     if (yourSeat !== undefined) this.localSeat = yourSeat;
 
     if (state.status === 'playing' && prevStatus !== 'playing') {

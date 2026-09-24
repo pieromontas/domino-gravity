@@ -59,6 +59,15 @@ class DominoGravityApp {
       const state = this.roomClient.getState();
       this.handleTileSelection(tile, state);
     };
+    this.hud.onHandViewChange = (mode) => {
+      this.handRenderer.setViewMode(mode);
+      const state = this.roomClient.getState();
+      this.handRenderer.updateHands(state.players, this.roomClient.getLocalSeat(), {
+        currentTurn: state.currentTurn,
+        teams: state.teams,
+        partnership: state.partnership
+      });
+    };
 
     this.initInteraction();
     this.initDiscord();
@@ -234,7 +243,12 @@ class DominoGravityApp {
     } else {
       this.chainRenderer.updateChain(state.chain);
     }
-    this.handRenderer.updateHands(state.players, localSeat);
+    this.handRenderer.setViewMode(this.hud.getHandView());
+    this.handRenderer.updateHands(state.players, localSeat, {
+      currentTurn: state.currentTurn,
+      teams: state.teams,
+      partnership: state.partnership
+    });
     this.tableScene.applyTable(parseTableId(state.tableId));
     this.tableScene.fitToChain(chainWorldBounds(state.chain));
     this.syncTableMusic(state);

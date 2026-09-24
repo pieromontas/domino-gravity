@@ -311,6 +311,53 @@ describe('host-controlled table selection', () => {
     room.dispose();
   });
 
+  it('lets the host set 4-player teams, names, and opposite seating', () => {
+    const room = new GameRoom('discord:g:c:teams', { graceMs: 50, aiDelayMs: 10_000 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    room.addAuthenticatedPlayer(session(store, 'Sam', 'user-sam'), mockSocket());
+    expect(room.state.partnership).toBe(false);
+    expect(room.addAI('user-alex', 'easy').ok).toBe(true);
+    expect(room.addAI('user-alex', 'easy').ok).toBe(true);
+    expect(room.state.partnership).toBe(true);
+    expect(room.state.teams).toHaveLength(2);
+    expect(room.state.players.map((p) => p.teamId)).toEqual([0, 1, 0, 1]);
+
+    expect(room.setTeamNameAction('user-sam', 0, 'Tigres').ok).toBe(false);
+    expect(room.setTeamNameAction('user-alex', 0, 'Tigres').ok).toBe(true);
+    expect(room.state.teams[0].name).toBe('Tigres');
+
+    expect(room.moveSeatToOtherTeam('user-alex', 0).ok).toBe(true);
+    expect(room.state.players[0].teamId).toBe(1);
+    expect(room.seatPartnersOppositeAction('user-alex').ok).toBe(true);
+    expect(room.state.players.filter((_, i) => i % 2 === 0).every((p) => p.teamId === 0)).toBe(true);
+
+    expect(room.setPartnership('user-alex', false).ok).toBe(true);
+    expect(room.state.partnership).toBe(false);
+    expect(room.startGame('user-alex').ok).toBe(true);
+    expect(room.state.partnership).toBe(false);
+    room.dispose();
+  });
+
+  it('accepts team messages and rejects a forged hand reorder', () => {
+    const room = new GameRoom('discord:g:c:hand', { graceMs: 50, aiDelayMs: 10_000 });
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());
+    room.addAuthenticatedPlayer(session(store, 'Sam', 'user-sam'), mockSocket());
+    expect(room.handleClientMessage('user-alex', { type: 'SET_TABLE', tableId: 'dominican' }).ok).toBe(true);
+    room.addAI('user-alex', 'easy');
+    room.addAI('user-alex', 'easy');
+    expect(room.handleClientMessage('user-alex', { type: 'SET_TEAM_NAME', teamId: 1, name: 'Leones' }).ok).toBe(true);
+    expect(room.state.teams[1].name).toBe('Leones');
+    expect(room.startGame('user-alex').ok).toBe(true);
+    const hand = room.state.players[0].hand;
+    expect(room.reorderHand('user-alex', [...hand].reverse()).ok).toBe(true);
+    expect(room.reorderHand('user-alex', [[0, 0]]).ok).toBe(false);
+    room.dispose();
+  });
+});
+
+describe('host-controlled table message bus', () => {
+  const store = new SessionStore();
+
   it('accepts SET_TABLE over the client message bus', () => {
     const room = new GameRoom('discord:g:c:table-msg', { graceMs: 50, aiDelayMs: 0 });
     room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), mockSocket());

@@ -9,10 +9,13 @@ export const TILE_THICKNESS = 0.14;
  * Playable snake rails. Felt radius is 6.2 and the gold inset is 4.8;
  * a wide X rail lets a late-round chain (15–28 tiles) stay on 1–2 rows
  * per wing instead of folding into a tight, overlapping U.
- * Z rail keeps the snake off the local hand (~z 3.35) and opponent racks.
+ * Z rail stays inside the hand/seat clearance so long snakes rewind
+ * instead of running through south/north racks (~z 3.7+).
  */
 export const SNAKE_LIMIT_X = 5.25;
-export const SNAKE_LIMIT_Z = 2.55;
+export const SNAKE_LIMIT_Z = 2.15;
+/** Local / north hand rails sit beyond this so tiles never hide seats. */
+export const HAND_CLEARANCE_Z = 3.2;
 
 /** Extra air at 90° corners so L-turns read as a clean snake, not a pile. */
 export const CORNER_GAP = 0.06;

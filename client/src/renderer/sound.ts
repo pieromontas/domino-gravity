@@ -150,6 +150,35 @@ class SoundManager {
   }
 
   /**
+   * Short table-call chirp for Pase / Pase y corrido / Capicúa.
+   */
+  public playCallChime(kind: 'pase' | 'pase_corrido' | 'capicua') {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const notes =
+        kind === 'pase' ? [392, 330]
+          : kind === 'pase_corrido' ? [523.25, 659.25, 784]
+            : [659.25, 830.61, 987.77, 1318.5];
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        osc.type = kind === 'capicua' ? 'triangle' : 'sine';
+        const start = now + idx * 0.07;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.16, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+        osc.start(start);
+        osc.stop(start + 0.22);
+      });
+    } catch { /* audio locked until a gesture */ }
+  }
+
+  /**
    * Round or match victory celebration fanfare
    */
   public playVictoryFanfare() {

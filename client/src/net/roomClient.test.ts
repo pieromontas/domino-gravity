@@ -65,6 +65,19 @@ describe('local table selection', () => {
     room.setTable('classic');
     expect(room.getState().tableId).toBe('classic');
   });
+
+  it('enables partnership on the fourth seat and supports team names', () => {
+    const { room } = clientWithUpdates();
+    expect(room.getState().partnership).toBe(false);
+    expect(room.addAI('easy')).toBe(true);
+    expect(room.addAI('easy')).toBe(true);
+    expect(room.getState().players).toHaveLength(4);
+    expect(room.getState().partnership).toBe(true);
+    room.setTeamName(0, 'Norte');
+    expect(room.getState().teams[0].name).toBe('Norte');
+    room.setPartnership(false);
+    expect(room.getState().partnership).toBe(false);
+  });
 });
 
 describe('Room start / rematch clears the table', () => {

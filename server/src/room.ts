@@ -4,6 +4,17 @@ import { DominoEngine } from './engine/dominoEngine.js';
 import { isAIDifficulty } from './engine/aiDifficulty.js';
 import { DEFAULT_TABLE_ID, formatTableLabel, isTableId } from './engine/tableId.js';
 import { AIDifficulty, EndSide, GameState, Player, Tile } from './engine/types.js';
+import {
+  emptyPartnershipFields,
+  isTeamId,
+  resetMatchScores,
+  sameTileMultiset,
+  seatPartnersOpposite,
+  setPartnershipEnabled,
+  setTeamName,
+  swapSeatToOtherTeam,
+  syncPartnershipRoster
+} from './engine/partnership.js';
 import { redactGameState } from './redact.js';
 import { PlayerSession } from './session.js';
 
@@ -41,6 +52,7 @@ export function createEmptyLobbyState(): GameState {
     tableId: DEFAULT_TABLE_ID,
     lastAction: 'Waiting for players…',
     winnerSeat: null,
+    ...emptyPartnershipFields(),
     seed: Date.now()
   };
 }
@@ -126,6 +138,7 @@ export class GameRoom {
       pendingJoin: false
     };
     this.state.players.push(player);
+    syncPartnershipRoster(this.state);
     if (isFirstHuman) {
       this.state.lastAction = `${player.name} opened the table and is host.`;
     } else {
@@ -203,6 +216,7 @@ export class GameRoom {
           if (nextHuman) this.assignHost(nextHuman.id);
         }
       }
+      syncPartnershipRoster(this.state);
     }
 
     this.dedupePlayers();
@@ -245,6 +259,7 @@ export class GameRoom {
       connected: true,
       pendingJoin: false
     });
+    syncPartnershipRoster(this.state);
     this.state.lastAction = `Host added ${nextName} (${parsed.difficulty.toUpperCase()} AI).`;
     this.broadcastState();
     return { ok: true };
@@ -330,7 +345,10 @@ export class GameRoom {
       return { ok: false, code: 'HUMAN_PENDING', message: 'Wait for joining Discord players before starting.' };
     }
     this.state.roundNumber = 1;
-    this.state.players.forEach((p) => { p.score = 0; });
+    resetMatchScores(this.state);
+    if (this.state.players.length === 4) {
+      syncPartnershipRoster(this.state);
+    }
     this.engine.startRound(this.state, Date.now());
     this.state.lastAction = this.state.lastAction || 'Match started.';
     this.broadcastState();
@@ -404,6 +422,10 @@ export class GameRoom {
       p.handCount = 0;
       p.score = 0;
     });
+    this.state.tableCall = null;
+    this.state.lastPassSeat = null;
+    this.state.roundSummary = undefined;
+    resetMatchScores(this.state);
     this.state.lastAction = 'Returned to lobby.';
     this.broadcastState();
     return { ok: true };
@@ -422,6 +444,16 @@ export class GameRoom {
         return this.setTargetScore(userId, Number(data.score));
       case 'SET_TABLE':
         return this.setTable(userId, data.tableId);
+      case 'SET_PARTNERSHIP':
+        return this.setPartnership(userId, data.enabled);
+      case 'SET_TEAM_NAME':
+        return this.setTeamNameAction(userId, Number(data.teamId), data.name);
+      case 'MOVE_SEAT_TEAM':
+        return this.moveSeatToOtherTeam(userId, Number(data.seat));
+      case 'SEAT_PARTNERS_OPPOSITE':
+        return this.seatPartnersOppositeAction(userId);
+      case 'REORDER_HAND':
+        return this.reorderHand(userId, data.hand);
       case 'START_GAME':
         return this.startGame(userId);
       case 'PLAY_TILE':
@@ -585,6 +617,93 @@ export class GameRoom {
 
   private reindexSeats() {
     this.state.players.forEach((p, idx) => { p.seat = idx; });
+    syncPartnershipRoster(this.state);
+  }
+
+  public setPartnership(actorUserId: string, enabled: unknown): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Teams can only be changed in the lobby.' };
+    }
+    if (this.state.players.length !== 4) {
+      return { ok: false, code: 'NEED_FOUR', message: 'Partnership needs four seated players.' };
+    }
+    if (!setPartnershipEnabled(this.state, enabled === true)) {
+      return { ok: false, code: 'BAD_TEAMS', message: 'Could not update partnership.' };
+    }
+    this.state.lastAction = this.state.partnership
+      ? 'Partnership mode on — opposite seats are partners.'
+      : 'Free-for-all scoring — each seat scores alone.';
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public setTeamNameAction(actorUserId: string, teamId: unknown, name: unknown): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Team names can only be changed in the lobby.' };
+    }
+    if (!isTeamId(teamId)) {
+      return { ok: false, code: 'BAD_TEAM', message: 'Team must be 0 or 1.' };
+    }
+    if (this.state.players.length !== 4) {
+      return { ok: false, code: 'NEED_FOUR', message: 'Team names need four seated players.' };
+    }
+    syncPartnershipRoster(this.state);
+    if (!setTeamName(this.state, teamId, name)) {
+      return { ok: false, code: 'BAD_TEAM', message: 'Unknown team.' };
+    }
+    this.state.lastAction = `Team renamed to ${this.state.teams[teamId]?.name}.`;
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public moveSeatToOtherTeam(actorUserId: string, seat: number): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Partners can only be rearranged in the lobby.' };
+    }
+    if (!swapSeatToOtherTeam(this.state, seat)) {
+      return { ok: false, code: 'BAD_SEAT', message: 'Need four players to rearrange partners.' };
+    }
+    this.state.lastAction = 'Host swapped partners.';
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public seatPartnersOppositeAction(actorUserId: string): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Seats can only be rearranged in the lobby.' };
+    }
+    if (!seatPartnersOpposite(this.state)) {
+      return { ok: false, code: 'NEED_FOUR', message: 'Need four players to seat partners opposite.' };
+    }
+    this.state.lastAction = 'Partners seated opposite (0+2 vs 1+3).';
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public reorderHand(actorUserId: string, hand: unknown): ActionResult {
+    const player = this.state.players.find((p) => p.id === actorUserId && !p.isAI);
+    if (!player) return { ok: false, code: 'NOT_SEATED', message: 'You are not seated at this table.' };
+    if (this.state.status !== 'playing') {
+      return { ok: false, code: 'NOT_PLAYING', message: 'Hands can only be rearranged during play.' };
+    }
+    if (!Array.isArray(hand) || !hand.every((t) => Array.isArray(t) && t.length === 2)) {
+      return { ok: false, code: 'BAD_HAND', message: 'Invalid hand order.' };
+    }
+    const next = (hand as Tile[]).map((t) => [Number(t[0]), Number(t[1])] as Tile);
+    if (!sameTileMultiset(player.hand, next)) {
+      return { ok: false, code: 'BAD_HAND', message: 'Hand reorder must keep the same tiles.' };
+    }
+    player.hand = next;
+    this.broadcastState();
+    return { ok: true };
   }
 
   private dedupePlayers() {
