@@ -78,6 +78,7 @@ export class RoomClient {
   private events: RoomClientEvents;
   private ws: WebSocket | null = null;
   private localSeat: number = 0;
+  private localPlayerId: string = 'local-you';
   public isMultiplayer: boolean = false;
   public roomId: string | null = null;
   private aiTurnTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -96,12 +97,24 @@ export class RoomClient {
   }
 
   public getLocalSeat(): number {
+    if (!this.isMultiplayer) this.syncLocalSeat();
     return this.localSeat;
   }
 
   public isLocalHost(): boolean {
-    const me = this.state.players.find((p) => p.seat === this.localSeat);
+    const me = this.localPlayer();
     return !!me?.isHost;
+  }
+
+  private localPlayer() {
+    return this.state.players.find((p) => p.id === this.localPlayerId)
+      ?? this.state.players.find((p) => !p.isAI && p.isHost)
+      ?? this.state.players.find((p) => p.seat === this.localSeat);
+  }
+
+  private syncLocalSeat() {
+    const me = this.localPlayer();
+    if (me) this.localSeat = me.seat;
   }
 
   public isLayoutPreview(): boolean {
@@ -110,10 +123,13 @@ export class RoomClient {
 
   public setLocalPlayer(name: string, avatar: string, id: string) {
     if (this.isMultiplayer) return;
-    if (this.state.players[0]) {
-      this.state.players[0].name = name;
-      this.state.players[0].avatar = avatar;
-      this.state.players[0].id = id;
+    const me = this.localPlayer() ?? this.state.players[0];
+    if (me) {
+      me.name = name;
+      me.avatar = avatar;
+      me.id = id;
+      this.localPlayerId = id;
+      this.syncLocalSeat();
       this.emitUpdate();
     }
   }
@@ -239,6 +255,7 @@ export class RoomClient {
     }
     if (this.state.status !== 'lobby') return;
     if (!swapSeatToOtherTeam(this.state, seat)) return;
+    this.syncLocalSeat();
     this.state.lastAction = 'Host swapped partners.';
     this.emitUpdate();
   }
@@ -250,6 +267,7 @@ export class RoomClient {
     }
     if (this.state.status !== 'lobby') return;
     if (!seatPartnersOpposite(this.state)) return;
+    this.syncLocalSeat();
     this.state.lastAction = 'Partners seated opposite (0+2 vs 1+3).';
     this.emitUpdate();
   }

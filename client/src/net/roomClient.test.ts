@@ -78,6 +78,19 @@ describe('local table selection', () => {
     room.setPartnership(false);
     expect(room.getState().partnership).toBe(false);
   });
+
+  it('keeps the local host after seating partners opposite', () => {
+    const { room } = clientWithUpdates();
+    room.addAI('easy');
+    room.addAI('easy');
+    expect(room.isLocalHost()).toBe(true);
+    const youId = room.getState().players.find((p) => p.isHost)?.id;
+    room.moveSeatToOtherTeam(0);
+    room.seatPartnersOpposite();
+    expect(room.isLocalHost()).toBe(true);
+    expect(room.getState().players[room.getLocalSeat()].id).toBe(youId);
+    expect(room.getState().players[room.getLocalSeat()].isHost).toBe(true);
+  });
 });
 
 describe('Room start / rematch clears the table', () => {
