@@ -33,6 +33,7 @@
   - Opponent stands displaying face-down dominoes and live tile counts.
 - **🔊 Procedural Web Audio Engine**:
   - 100% synthesized audio effects with zero external audio assets: crisp ivory tile clacks, table drop thuds, shuffle swishes, turn notifications, and victory fanfare.
+  - Dominican patio table: royalty-free Pixabay bachata playlist (`client/public/audio/`) with a seamless A↔B crossfade. Default muted so it never fights Discord voice.
 
 ---
 
@@ -44,6 +45,7 @@ DominoDiscord/
 │   ├── .env.production         # Public Discord Application ID for Vite production builds
 │   ├── index.html              # HTML entry point with responsive viewport
 │   ├── vite.config.ts          # Vite configuration with /api and /ws proxy
+│   ├── public/audio/           # Patio bachata MP3s (Pixabay Content License)
 │   └── src/
 │       ├── main.ts             # Application coordinator
 │       ├── style.css           # Glassmorphism UI & responsive styles
@@ -59,7 +61,8 @@ DominoDiscord/
 │       │   ├── chainRenderer.ts# Renders snake chain & open end target rings
 │       │   ├── handRenderer.ts # Local 3D curved fan & opponent tile stands
 │       │   ├── animSystem.ts   # Smooth tile lift, rotate & drop animations
-│       │   └── sound.ts        # Web Audio API procedural sound engine
+│       │   ├── sound.ts        # Web Audio API procedural sound engine
+│       │   └── tableMusic.ts   # Patio bachata playlist + A↔B crossfade
 │       ├── net/
 │       │   ├── discord.ts      # @discord/embedded-app-sdk integration
 │       │   └── roomClient.ts   # Room client (local offline & WebSocket)

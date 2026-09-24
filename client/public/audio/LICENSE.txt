@@ -1,0 +1,14 @@
+Patio background music bundled with Domino Gravity.
+
+These MP3s ship only as in-game assets. They are not redistributed as
+standalone downloads outside the game.
+
+Both tracks are used under the Pixabay Content License
+(https://pixabay.com/service/license-music/): commercial and game use is
+permitted; attribution is not required.
+
+1. Bachata Street — MiguelBono
+   https://pixabay.com/music/acoustic-group-bachata-street-381811/
+
+2. Bajo la Luna Bailando — susan-lu4esm
+   https://pixabay.com/music/bachata-bajo-la-luna-bailando-461721/
