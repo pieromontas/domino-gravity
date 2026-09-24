@@ -38,6 +38,20 @@ export function nextTrackIndex(current: number, count = PATIO_TRACKS.length): nu
   return ((current % count) + 1) % count;
 }
 
+/** Local QA helper shape — not used by lobby/HUD. */
+export type PatioMusicDebugSnapshot = {
+  playing: boolean;
+  muted: boolean;
+  current: number;
+  fading: boolean;
+  volume: number;
+  currentPaused: boolean;
+  currentTime: number;
+  currentDuration: number;
+  otherPaused: boolean;
+  ctxState: string;
+};
+
 type TrackSlot = {
   element: HTMLAudioElement;
   gain: GainNode;
@@ -119,6 +133,34 @@ class TableMusic {
     this.applyGain();
     if (this.muted) return;
     void this.resumeOrStart();
+  }
+
+  /** Local QA helper: inspect HTMLAudio playback without changing the public API. */
+  public debugSnapshot(): PatioMusicDebugSnapshot {
+    const slot = this.activeSlot();
+    const other = this.slots[nextTrackIndex(this.current)];
+    return {
+      playing: this.playing,
+      muted: this.muted,
+      current: this.current,
+      fading: this.fading,
+      volume: this.volume,
+      currentPaused: slot?.element.paused ?? true,
+      currentTime: slot?.element.currentTime ?? 0,
+      currentDuration: slot?.element.duration ?? 0,
+      otherPaused: other?.element.paused ?? true,
+      ctxState: this.ctx?.state ?? 'none'
+    };
+  }
+
+  /** Local QA helper: jump near the end so the A↔B crossfade can be observed quickly. */
+  public debugSeekNearEnd(secondsBeforeEnd = 4): boolean {
+    const slot = this.activeSlot();
+    if (!slot) return false;
+    const duration = slot.element.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return false;
+    slot.element.currentTime = Math.max(0, duration - secondsBeforeEnd);
+    return true;
   }
 
   public stop() {
@@ -329,3 +371,7 @@ class TableMusic {
 }
 
 export const tableMusic = new TableMusic();
+
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __tableMusic: TableMusic }).__tableMusic = tableMusic;
+}
