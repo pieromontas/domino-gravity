@@ -8,9 +8,11 @@ import {
   resetMatchScores,
   sameTileMultiset,
   seatPartnersOpposite,
+  setPartnerPair,
   setPartnershipEnabled,
   setTeamName,
   swapSeatToOtherTeam,
+  swapSeats,
   syncPartnershipRoster
 } from '../engine/partnership.ts';
 import { soundManager } from '../renderer/sound.ts';
@@ -257,6 +259,34 @@ export class RoomClient {
     if (!swapSeatToOtherTeam(this.state, seat)) return;
     this.syncLocalSeat();
     this.state.lastAction = 'Host swapped partners.';
+    this.emitUpdate();
+  }
+
+  public setPartnerPair(seatA: number, seatB: number, teamId?: TeamId) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SET_PARTNER_PAIR', seatA, seatB, teamId });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    if (!setPartnerPair(this.state, seatA, seatB, teamId)) return;
+    this.syncLocalSeat();
+    const pair = this.state.players.filter((p) => p.seat === seatA || p.seat === seatB);
+    const others = this.state.players.filter((p) => p.seat !== seatA && p.seat !== seatB);
+    this.state.lastAction = `Host set teams: ${pair.map((p) => p.name).join(' + ')} vs ${others.map((p) => p.name).join(' + ')}.`;
+    this.emitUpdate();
+  }
+
+  public swapSeats(seatA: number, seatB: number) {
+    if (this.isMultiplayer) {
+      this.send({ type: 'SWAP_SEATS', seatA, seatB });
+      return;
+    }
+    if (this.state.status !== 'lobby') return;
+    const beforeA = this.state.players.find((p) => p.seat === seatA);
+    const beforeB = this.state.players.find((p) => p.seat === seatB);
+    if (!swapSeats(this.state, seatA, seatB)) return;
+    this.syncLocalSeat();
+    this.state.lastAction = `Host swapped ${beforeA?.name ?? 'a player'} and ${beforeB?.name ?? 'a player'}.`;
     this.emitUpdate();
   }
 

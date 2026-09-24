@@ -7,12 +7,15 @@ import { AIDifficulty, EndSide, GameState, Player, Tile } from './engine/types.j
 import {
   emptyPartnershipFields,
   isTeamId,
+  isValidLobbySeat,
   resetMatchScores,
   sameTileMultiset,
   seatPartnersOpposite,
+  setPartnerPair,
   setPartnershipEnabled,
   setTeamName,
   swapSeatToOtherTeam,
+  swapSeats,
   syncPartnershipRoster
 } from './engine/partnership.js';
 import { redactGameState } from './redact.js';
@@ -450,6 +453,10 @@ export class GameRoom {
         return this.setTeamNameAction(userId, Number(data.teamId), data.name);
       case 'MOVE_SEAT_TEAM':
         return this.moveSeatToOtherTeam(userId, Number(data.seat));
+      case 'SET_PARTNER_PAIR':
+        return this.setPartnerPairAction(userId, data.seatA, data.seatB, data.teamId);
+      case 'SWAP_SEATS':
+        return this.swapSeatsAction(userId, data.seatA, data.seatB);
       case 'SEAT_PARTNERS_OPPOSITE':
         return this.seatPartnersOppositeAction(userId);
       case 'REORDER_HAND':
@@ -670,6 +677,59 @@ export class GameRoom {
       return { ok: false, code: 'BAD_SEAT', message: 'Need four players to rearrange partners.' };
     }
     this.state.lastAction = 'Host swapped partners.';
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public setPartnerPairAction(
+    actorUserId: string,
+    seatA: unknown,
+    seatB: unknown,
+    teamId?: unknown
+  ): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Partners can only be arranged in the lobby.' };
+    }
+    const a = Number(seatA);
+    const b = Number(seatB);
+    if (!isValidLobbySeat(a) || !isValidLobbySeat(b)) {
+      return { ok: false, code: 'BAD_SEAT', message: 'Pick two seats between 1 and 4.' };
+    }
+    const chosenTeam = teamId === undefined || teamId === null || teamId === ''
+      ? undefined
+      : (isTeamId(Number(teamId)) ? Number(teamId) as 0 | 1 : null);
+    if (chosenTeam === null) {
+      return { ok: false, code: 'BAD_TEAM', message: 'Team must be 0 or 1.' };
+    }
+    if (!setPartnerPair(this.state, a, b, chosenTeam)) {
+      return { ok: false, code: 'BAD_SEAT', message: 'Need four seated players and two different seats.' };
+    }
+    const pair = this.state.players.filter((p) => p.seat === a || p.seat === b);
+    const others = this.state.players.filter((p) => p.seat !== a && p.seat !== b);
+    this.state.lastAction = `Host set teams: ${pair.map((p) => p.name).join(' + ')} vs ${others.map((p) => p.name).join(' + ')}.`;
+    this.broadcastState();
+    return { ok: true };
+  }
+
+  public swapSeatsAction(actorUserId: string, seatA: unknown, seatB: unknown): ActionResult {
+    const auth = this.requireHost(actorUserId);
+    if (!auth.ok) return auth;
+    if (this.state.status !== 'lobby') {
+      return { ok: false, code: 'NOT_LOBBY', message: 'Seats can only be swapped in the lobby.' };
+    }
+    const a = Number(seatA);
+    const b = Number(seatB);
+    if (!isValidLobbySeat(a) || !isValidLobbySeat(b)) {
+      return { ok: false, code: 'BAD_SEAT', message: 'Pick two seats between 1 and 4.' };
+    }
+    const beforeA = this.state.players.find((p) => p.seat === a);
+    const beforeB = this.state.players.find((p) => p.seat === b);
+    if (!swapSeats(this.state, a, b)) {
+      return { ok: false, code: 'BAD_SEAT', message: 'Both seats must be occupied to swap.' };
+    }
+    this.state.lastAction = `Host swapped ${beforeA?.name ?? 'a player'} and ${beforeB?.name ?? 'a player'}.`;
     this.broadcastState();
     return { ok: true };
   }

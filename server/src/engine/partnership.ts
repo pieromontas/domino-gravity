@@ -28,6 +28,29 @@ export function isTeamId(value: unknown): value is TeamId {
   return value === 0 || value === 1;
 }
 
+export function isValidLobbySeat(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 3;
+}
+
+/** Opposite seats around a square table (0↔2, 1↔3). */
+export function seatsAreOpposite(a: number, b: number): boolean {
+  return isValidLobbySeat(a) && isValidLobbySeat(b) && Math.abs(a - b) === 2;
+}
+
+export function teamCounts(state: Pick<GameState, 'players'>): [number, number] {
+  const counts: [number, number] = [0, 0];
+  for (const player of state.players) {
+    counts[player.teamId === 1 ? 1 : 0] += 1;
+  }
+  return counts;
+}
+
+export function teamsAreBalanced(state: Pick<GameState, 'players'>): boolean {
+  if (state.players.length !== 4) return false;
+  const [a, b] = teamCounts(state);
+  return a === 2 && b === 2;
+}
+
 export function sanitizeTeamName(raw: unknown, fallback: string): string {
   const text = String(raw ?? '')
     .replace(/[\u0000-\u001F<>]/g, '')
@@ -164,6 +187,50 @@ export function swapSeatToOtherTeam(state: GameState, seat: number): boolean {
   if (!swap) return false;
   swap.teamId = player.teamId;
   player.teamId = otherId;
+  rebuildTeamSeats(state);
+  return true;
+}
+
+/**
+ * Put any two occupied seats on one team and the remaining two on the other.
+ * Always 2v2. The pair joins `teamId` when given, otherwise seat A's team.
+ */
+export function setPartnerPair(
+  state: GameState,
+  seatA: number,
+  seatB: number,
+  teamId?: TeamId
+): boolean {
+  if (state.players.length !== 4) return false;
+  if (!isValidLobbySeat(seatA) || !isValidLobbySeat(seatB) || seatA === seatB) return false;
+  const playerA = state.players.find((p) => p.seat === seatA);
+  const playerB = state.players.find((p) => p.seat === seatB);
+  if (!playerA || !playerB) return false;
+
+  if (!state.teams.length) state.teams = createDefaultTeams();
+  const keepTeam: TeamId = isTeamId(teamId)
+    ? teamId
+    : (playerA.teamId === 1 ? 1 : 0);
+  const otherTeam: TeamId = keepTeam === 0 ? 1 : 0;
+  for (const player of state.players) {
+    player.teamId = player.seat === seatA || player.seat === seatB ? keepTeam : otherTeam;
+  }
+  rebuildTeamSeats(state);
+  return teamsAreBalanced(state);
+}
+
+/**
+ * Swap the people sitting in two seats. Discord / AI identity, host flag,
+ * and team membership travel with the player so partnerships stay intact.
+ */
+export function swapSeats(state: GameState, seatA: number, seatB: number): boolean {
+  if (!isValidLobbySeat(seatA) || !isValidLobbySeat(seatB) || seatA === seatB) return false;
+  const playerA = state.players.find((p) => p.seat === seatA);
+  const playerB = state.players.find((p) => p.seat === seatB);
+  if (!playerA || !playerB) return false;
+  playerA.seat = seatB;
+  playerB.seat = seatA;
+  state.players.sort((a, b) => a.seat - b.seat);
   rebuildTeamSeats(state);
   return true;
 }

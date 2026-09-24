@@ -91,6 +91,27 @@ describe('local table selection', () => {
     expect(room.getState().players[room.getLocalSeat()].id).toBe(youId);
     expect(room.getState().players[room.getLocalSeat()].isHost).toBe(true);
   });
+
+  it('lets the local host pair any two seats and swap people without losing identity', () => {
+    const { room } = clientWithUpdates();
+    room.addAI('easy');
+    room.addAI('easy');
+    const youId = room.getState().players.find((p) => p.isHost)?.id;
+    const names = room.getState().players.map((p) => p.name);
+
+    room.setPartnerPair(0, 1);
+    const afterPair = room.getState();
+    expect(afterPair.players.filter((p) => p.teamId === 0).map((p) => p.seat).sort()).toEqual([0, 1]);
+    expect(afterPair.players.filter((p) => p.teamId === 1).map((p) => p.seat).sort()).toEqual([2, 3]);
+
+    room.swapSeats(0, 2);
+    const afterSwap = room.getState();
+    expect(afterSwap.players[0].name).toBe(names[2]);
+    expect(afterSwap.players[2].name).toBe(names[0]);
+    expect(afterSwap.players.find((p) => p.id === youId)?.isHost).toBe(true);
+    expect(room.isLocalHost()).toBe(true);
+    expect(room.getState().players[room.getLocalSeat()].id).toBe(youId);
+  });
 });
 
 describe('Room start / rematch clears the table', () => {
