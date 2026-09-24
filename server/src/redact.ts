@@ -21,10 +21,18 @@ export function redactGameState(state: GameState, viewerSeat: number): GameState
     requiredLeadTile: state.requiredLeadTile
       ? [state.requiredLeadTile[0], state.requiredLeadTile[1]] as Tile
       : state.requiredLeadTile,
+    teams: state.teams.map((team) => ({
+      ...team,
+      seats: [team.seats[0], team.seats[1]] as [number, number]
+    })),
+    tableCall: state.tableCall ? { ...state.tableCall } : null,
+    lastPassSeat: state.lastPassSeat,
+    partnership: state.partnership,
     roundSummary: state.roundSummary
       ? {
           ...state.roundSummary,
-          playerPips: state.roundSummary.playerPips.map((row) => ({ ...row }))
+          playerPips: state.roundSummary.playerPips.map((row) => ({ ...row })),
+          teamPips: state.roundSummary.teamPips?.map((row) => ({ ...row }))
         }
       : undefined,
     lastAction: redactLastAction(state, viewerSeat)

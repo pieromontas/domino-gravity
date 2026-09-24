@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import { Player, Tile } from '../engine/types.ts';
+import { Player, Team, Tile } from '../engine/types.ts';
 import { createDominoMesh } from './tileMesh.ts';
 import { TILE_LENGTH } from '../engine/chainPath.ts';
+
+export type HandViewMode = 'fan' | 'inspect';
+
+/** South / north seat rails — kept beyond SNAKE_LIMIT_Z + HAND_CLEARANCE_Z. */
+export const LOCAL_HAND_Z = 3.7;
+export const OPPONENT_RACK_RADIUS = 5.85;
 
 /**
  * Positive X tilt rotates the +Y pip face toward world +Z — the seated
@@ -20,8 +26,25 @@ export interface LocalHandSlot {
   rotZ: number;
 }
 
-/** Fan slot for the local seat so pips stay readable from the camera. */
-export function localHandSlot(index: number, total: number): LocalHandSlot {
+/** Fan or inspect-row slot for the local seat so pips stay readable. */
+export function localHandSlot(
+  index: number,
+  total: number,
+  view: HandViewMode = 'fan'
+): LocalHandSlot {
+  if (view === 'inspect') {
+    const spacing = 0.78;
+    const startX = -((total - 1) * spacing) / 2;
+    return {
+      x: startX + index * spacing,
+      y: 0.82,
+      z: LOCAL_HAND_Z + 0.35,
+      rotX: LOCAL_HAND_FACE_TILT,
+      rotY: 0,
+      rotZ: 0
+    };
+  }
+
   const arcRadius = 4.0;
   const maxSpreadAngle = Math.PI * 0.36;
   const angleStep = total > 1 ? maxSpreadAngle / Math.max(total - 1, 1) : 0;
@@ -30,8 +53,8 @@ export function localHandSlot(index: number, total: number): LocalHandSlot {
 
   return {
     x: Math.sin(angle) * arcRadius,
-    y: 0.56,
-    z: 3.35 + (1 - Math.cos(angle)) * 0.5,
+    y: 0.68,
+    z: LOCAL_HAND_Z + (1 - Math.cos(angle)) * 0.45,
     rotX: LOCAL_HAND_FACE_TILT,
     rotY: -angle * 0.28,
     rotZ: 0
@@ -46,8 +69,13 @@ export class HandRenderer {
   private localMeshes: THREE.Group[] = [];
   private selectedTileIndex: number | null = null;
   private hoveredTileIndex: number | null = null;
+  private viewMode: HandViewMode = 'fan';
 
   public onTileSelected?: (tile: Tile, index: number) => void;
+
+  public setViewMode(mode: HandViewMode) {
+    this.viewMode = mode;
+  }
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -64,12 +92,16 @@ export class HandRenderer {
   /**
    * Updates 3D tiles for local player hand and opponents
    */
-  public updateHands(players: Player[], localSeat: number) {
-    this.updateLocalHand(players[localSeat]?.hand || []);
-    this.updateOpponents(players, localSeat);
+  public updateHands(
+    players: Player[],
+    localSeat: number,
+    options: { currentTurn?: number; teams?: Team[]; partnership?: boolean } = {}
+  ) {
+    this.updateLocalHand(players[localSeat]?.hand || [], options.currentTurn === localSeat);
+    this.updateOpponents(players, localSeat, options);
   }
 
-  private updateLocalHand(hand: Tile[]) {
+  private updateLocalHand(hand: Tile[], isActiveTurn = false) {
     // Clear old meshes
     while (this.localHandGroup.children.length > 0) {
       const obj = this.localHandGroup.children[0];
@@ -78,11 +110,20 @@ export class HandRenderer {
     this.localMeshes = [];
 
     const total = hand.length;
+    if (isActiveTurn) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1.35, 0.04, 10, 40),
+        new THREE.MeshBasicMaterial({ color: 0x34D399, transparent: true, opacity: 0.85 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0, 0.12, LOCAL_HAND_Z);
+      this.localHandGroup.add(ring);
+    }
     if (total === 0) return;
 
     hand.forEach((tile, idx) => {
       const mesh = createDominoMesh(tile);
-      const slot = localHandSlot(idx, total);
+      const slot = localHandSlot(idx, total, this.viewMode);
 
       mesh.position.set(slot.x, slot.y, slot.z);
       mesh.rotation.order = 'XYZ';
@@ -109,7 +150,11 @@ export class HandRenderer {
     }
   }
 
-  private updateOpponents(players: Player[], localSeat: number) {
+  private updateOpponents(
+    players: Player[],
+    localSeat: number,
+    options: { currentTurn?: number; teams?: Team[]; partnership?: boolean } = {}
+  ) {
     while (this.opponentsGroup.children.length > 0) {
       const obj = this.opponentsGroup.children[0];
       this.opponentsGroup.remove(obj);
@@ -136,13 +181,18 @@ export class HandRenderer {
         angle = (relativeSeat * (Math.PI * 2)) / 4;
       }
 
-      this.renderOpponentRack(player, angle);
+      this.renderOpponentRack(player, angle, options);
     });
   }
 
-  private renderOpponentRack(player: Player, angle: number) {
+  private renderOpponentRack(
+    player: Player,
+    angle: number,
+    options: { currentTurn?: number; teams?: Team[]; partnership?: boolean } = {}
+  ) {
     const rackGroup = new THREE.Group();
-    const tableRadius = 4.2;
+    const tableRadius = OPPONENT_RACK_RADIUS;
+    const isActive = options.currentTurn === player.seat;
 
     const cx = Math.sin(angle) * tableRadius;
     const cz = Math.cos(angle) * tableRadius;
@@ -164,32 +214,65 @@ export class HandRenderer {
     }
 
     // Opponent Floating Name & Count Badge
-    const badge = this.createPlayerBadge(player);
+    const team = options.teams?.find((t) => t.id === player.teamId);
+    const badge = this.createPlayerBadge(player, {
+      active: isActive,
+      teamName: options.partnership ? team?.name : undefined
+    });
     badge.position.set(0, 1.3, 0);
     rackGroup.add(badge);
+
+    if (isActive) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.55, 0.045, 10, 28),
+        new THREE.MeshBasicMaterial({ color: 0xFBBF24 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0, 0.08, 0);
+      rackGroup.add(ring);
+    } else {
+      rackGroup.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material) {
+          const mat = obj.material as THREE.MeshStandardMaterial;
+          if ('opacity' in mat) {
+            mat.transparent = true;
+            mat.opacity = 0.55;
+          }
+        }
+      });
+    }
 
     this.opponentsGroup.add(rackGroup);
   }
 
-  private createPlayerBadge(player: Player): THREE.Sprite {
+  private createPlayerBadge(
+    player: Player,
+    opts: { active?: boolean; teamName?: string } = {}
+  ): THREE.Sprite {
     const canvas = document.createElement('canvas');
     canvas.width = 384;
     canvas.height = 96;
     const ctx = canvas.getContext('2d')!;
 
     // Rounded dark glass pill
-    ctx.fillStyle = 'rgba(18, 24, 34, 0.88)';
-    ctx.strokeStyle = player.isAI ? '#60A5FA' : '#34D399';
-    ctx.lineWidth = 4;
+    ctx.fillStyle = opts.active ? 'rgba(42, 32, 8, 0.94)' : 'rgba(18, 24, 34, 0.72)';
+    ctx.strokeStyle = opts.active ? '#FBBF24' : player.isAI ? '#60A5FA' : '#34D399';
+    ctx.lineWidth = opts.active ? 8 : 4;
     this.roundRect(ctx, 4, 4, 376, 88, 20, true, true);
 
     // Player Name
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = opts.active ? '#FFF7D6' : '#FFFFFF';
     ctx.font = 'bold 30px "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const displayName = player.name.length > 14 ? player.name.slice(0, 12) + '…' : player.name;
-    ctx.fillText(displayName, 24, 48);
+    const label = opts.teamName ? `${player.name}` : player.name;
+    const displayName = label.length > 14 ? label.slice(0, 12) + '…' : label;
+    ctx.fillText(opts.active ? `▶ ${displayName}` : displayName, 24, opts.teamName ? 36 : 48);
+    if (opts.teamName) {
+      ctx.fillStyle = '#FBBF24';
+      ctx.font = 'bold 16px "Segoe UI", sans-serif';
+      ctx.fillText(opts.teamName, 24, 64);
+    }
 
     // Tile count pill
     ctx.fillStyle = '#374151';

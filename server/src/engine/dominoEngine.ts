@@ -15,6 +15,20 @@ import {
   shuffleDeck
 } from './dominoDeck.js';
 import { ChainLayoutManager } from './chainPath.js';
+import {
+  awardPoints,
+  emptyPartnershipFields,
+  isClassicCapicua,
+  isPartnershipActive,
+  makeTableCall,
+  opposingTeamPips,
+  otherSeatsPips,
+  playerPipRows,
+  scoreMeetsTarget,
+  syncPartnershipRoster,
+  teamForSeat,
+  teamPipRows
+} from './partnership.js';
 
 export class DominoEngine {
   private layoutManager: ChainLayoutManager;
@@ -53,8 +67,13 @@ export class DominoEngine {
       tableId: 'classic',
       lastAction: 'Game started',
       winnerSeat: null,
+      ...emptyPartnershipFields(),
       seed
     };
+
+    if (players.length === 4) {
+      syncPartnershipRoster(state);
+    }
 
     this.startRound(state, seed);
     return state;
@@ -72,6 +91,8 @@ export class DominoEngine {
     state.status = 'playing';
     state.winnerSeat = null;
     state.roundSummary = undefined;
+    state.tableCall = null;
+    state.lastPassSeat = null;
 
     const deck = shuffleDeck(generateDoubleSixDeck(), seed);
     const handSize = 7;
@@ -203,6 +224,8 @@ export class DominoEngine {
       }
     }
 
+    const afterPass = state.lastPassSeat !== null;
+
     // If chain is empty:
     if (state.chain.length === 0) {
       const placed = this.layoutManager.calculateFirstTile(actualTile);
@@ -210,9 +233,10 @@ export class DominoEngine {
       state.openEnds = { left: actualTile[0], right: actualTile[1] };
       player.hand.splice(tileIdx, 1);
       state.requiredLeadTile = null;
-      state.lastAction = `🎲 ${player.name} opened with [${actualTile[0]}|${actualTile[1]}] (Open ends: ${actualTile[0]} & ${actualTile[1]})`;
       state.consecutivePasses = 0;
-      this.finishTurnOrRound(state, playerSeat);
+      state.lastPassSeat = null;
+      this.announcePlay(state, playerSeat, actualTile, 'right', afterPass, false);
+      this.finishTurnOrRound(state, playerSeat, false);
       return true;
     }
 
@@ -220,17 +244,20 @@ export class DominoEngine {
     const targetPip = side === 'left' ? state.openEnds.left : state.openEnds.right;
     if (targetPip === null) return false;
 
-    const legalOnSide = this.getLegalMoves(
+    const legalMoves = this.getLegalMoves(
       [actualTile],
       state.openEnds,
       false,
       state.requiredLeadTile
-    ).some(m => m.side === side);
+    );
+    const legalOnSide = legalMoves.some(m => m.side === side);
 
     if (!legalOnSide) {
       state.lastAction = `⚠️ Rule: [${actualTile[0]}|${actualTile[1]}] cannot be played on ${side} (needs ${targetPip})!`;
       return false;
     }
+
+    const capicua = isClassicCapicua(actualTile, state.openEnds, legalMoves);
 
     const placed = this.layoutManager.appendTile(actualTile, side, targetPip, state.chain.length);
     // Keep chain[0] = left end, chain[last] = right end so drop-targets track the real tips.
@@ -250,9 +277,9 @@ export class DominoEngine {
 
     player.hand.splice(tileIdx, 1);
     state.consecutivePasses = 0;
-    state.lastAction = `🎲 ${player.name} played [${actualTile[0]}|${actualTile[1]}] on ${side} (Open ends: ${state.openEnds.left} & ${state.openEnds.right})`;
-
-    this.finishTurnOrRound(state, playerSeat);
+    state.lastPassSeat = null;
+    this.announcePlay(state, playerSeat, actualTile, side, afterPass, capicua);
+    this.finishTurnOrRound(state, playerSeat, capicua);
     return true;
   }
 
@@ -320,7 +347,9 @@ export class DominoEngine {
     }
 
     state.consecutivePasses++;
-    state.lastAction = `⏭️ ${player.name} has no playable tiles & boneyard is empty. Passed turn.`;
+    state.lastPassSeat = playerSeat;
+    state.tableCall = makeTableCall('pase', playerSeat, player.name);
+    state.lastAction = `¡Pase! ${player.name} has no playable tiles & boneyard is empty.`;
 
     // Check if game is blocked: all players passed consecutively and boneyard is empty
     if (state.consecutivePasses >= state.players.length && state.boneyard.length === 0) {
@@ -332,66 +361,143 @@ export class DominoEngine {
     return true;
   }
 
+  private announcePlay(
+    state: GameState,
+    playerSeat: number,
+    tile: Tile,
+    side: EndSide,
+    afterPass: boolean,
+    capicua: boolean
+  ): void {
+    const player = state.players[playerSeat];
+    if (afterPass && player.hand.length > 0) {
+      state.tableCall = makeTableCall('pase_corrido', playerSeat, player.name);
+      state.lastAction = `¡Pase y corrido! ${player.name} played [${tile[0]}|${tile[1]}] on ${side} (Open ends: ${state.openEnds.left} & ${state.openEnds.right})`;
+      return;
+    }
+    if (!capicua) {
+      state.tableCall = null;
+      state.lastAction = `🎲 ${player.name} played [${tile[0]}|${tile[1]}] on ${side} (Open ends: ${state.openEnds.left} & ${state.openEnds.right})`;
+    }
+  }
+
   /**
    * Checks for round end (empty hand) or advances turn
    */
-  private finishTurnOrRound(state: GameState, playerSeat: number): void {
+  private finishTurnOrRound(state: GameState, playerSeat: number, capicua: boolean): void {
     const player = state.players[playerSeat];
 
-    // Check if player cleared hand
     if (player.hand.length === 0) {
-      // Domino! Player wins the round
-      let roundPoints = 0;
-      const playerPips = state.players.map(p => {
-        const pips = handTotalPips(p.hand);
-        if (p.seat !== playerSeat) {
-          roundPoints += pips;
-        }
-        return { seat: p.seat, name: p.name, pips };
-      });
+      const playerPips = playerPipRows(state);
+      const partnership = isPartnershipActive(state);
+      let roundPoints = partnership
+        ? opposingTeamPips(state, playerSeat)
+        : otherSeatsPips(state, playerSeat);
+      if (capicua) roundPoints *= 2;
 
-      player.score += roundPoints;
+      const winnerTeamId = awardPoints(state, playerSeat, roundPoints);
       state.winnerSeat = playerSeat;
       state.roundSummary = {
         reason: 'domino',
         winnerSeat: playerSeat,
+        winnerTeamId,
         pointsWon: roundPoints,
-        playerPips
+        capicua,
+        playerPips,
+        teamPips: partnership ? teamPipRows(state) : undefined
       };
 
-      if (player.score >= state.targetScore) {
+      const team = partnership ? teamForSeat(state, playerSeat) : undefined;
+      const winnerLabel = team ? team.name : player.name;
+      if (capicua) {
+        state.tableCall = makeTableCall('capicua', playerSeat, player.name);
+      }
+
+      if (scoreMeetsTarget(state, playerSeat)) {
         state.status = 'match_end';
-        state.lastAction = `🏆 ${player.name} DOMINO! Won the match with ${player.score} points!`;
+        state.lastAction = capicua
+          ? `¡Capicúa! 🏆 ${winnerLabel} DOMINO! Won the match with ${team?.score ?? player.score} points!`
+          : `🏆 ${winnerLabel} DOMINO! Won the match with ${team?.score ?? player.score} points!`;
       } else {
         state.status = 'round_end';
-        state.lastAction = `🎉 ${player.name} DOMINO! Won round with +${roundPoints} points!`;
+        state.lastAction = capicua
+          ? `¡Capicúa! 🎉 ${winnerLabel} DOMINO! Double points +${roundPoints}!`
+          : `🎉 ${winnerLabel} DOMINO! Won round with +${roundPoints} points!`;
       }
       return;
     }
 
-    // Check if chain is blocked after this play
     this.advanceTurn(state);
   }
 
   private handleBlockedGame(state: GameState): void {
+    const partnership = isPartnershipActive(state);
+    const playerPips = playerPipRows(state);
+
+    if (partnership) {
+      const teamPips = teamPipRows(state);
+      const sorted = [...teamPips].sort((a, b) => a.pips - b.pips);
+      const low = sorted[0];
+      const high = sorted[1];
+      const isTie = !low || !high || low.pips === high.pips;
+      const winningTeamPlayers = state.players.filter((p) => p.teamId === low?.teamId);
+      const winnerSeat = winningTeamPlayers
+        .slice()
+        .sort((a, b) => handTotalPips(a.hand) - handTotalPips(b.hand))[0]?.seat ?? 0;
+
+      if (isTie) {
+        state.status = 'round_end';
+        state.winnerSeat = winnerSeat;
+        state.roundSummary = {
+          reason: 'blocked',
+          winnerSeat,
+          winnerTeamId: low?.teamId,
+          pointsWon: 0,
+          playerPips,
+          teamPips
+        };
+        state.lastAction = `Round blocked! Teams tied with ${low?.pips ?? 0} pips. No points awarded.`;
+        return;
+      }
+
+      const pointsWon = Math.max(0, high.pips - low.pips);
+      const winnerTeamId = awardPoints(state, winnerSeat, pointsWon);
+      const team = teamForSeat(state, winnerSeat);
+      state.winnerSeat = winnerSeat;
+      state.roundSummary = {
+        reason: 'blocked',
+        winnerSeat,
+        winnerTeamId,
+        pointsWon,
+        playerPips,
+        teamPips
+      };
+
+      if (scoreMeetsTarget(state, winnerSeat)) {
+        state.status = 'match_end';
+        state.lastAction = `🏆 Blocked! ${team?.name ?? 'Team'} wins the match with ${team?.score ?? pointsWon} points!`;
+      } else {
+        state.status = 'round_end';
+        state.lastAction = `Round blocked! ${team?.name ?? 'Team'} had fewer pips (${low.pips}) and won +${pointsWon} points!`;
+      }
+      return;
+    }
+
     let lowestPips = 999;
     let winnerSeat = 0;
     let isTie = false;
 
-    const playerPips = state.players.map(p => {
-      const pips = handTotalPips(p.hand);
-      if (pips < lowestPips) {
-        lowestPips = pips;
-        winnerSeat = p.seat;
+    for (const row of playerPips) {
+      if (row.pips < lowestPips) {
+        lowestPips = row.pips;
+        winnerSeat = row.seat;
         isTie = false;
-      } else if (pips === lowestPips) {
+      } else if (row.pips === lowestPips) {
         isTie = true;
       }
-      return { seat: p.seat, name: p.name, pips };
-    });
+    }
 
     if (isTie) {
-      // Tie: no points awarded
       state.status = 'round_end';
       state.winnerSeat = winnerSeat;
       state.roundSummary = {
@@ -404,17 +510,12 @@ export class DominoEngine {
       return;
     }
 
-    const winner = state.players[winnerSeat];
-    let pointsWon = 0;
-    for (const p of state.players) {
-      if (p.seat !== winnerSeat) {
-        pointsWon += handTotalPips(p.hand);
-      }
-    }
+    let pointsWon = otherSeatsPips(state, winnerSeat);
     // Standard block rule: winner gets opponent pips minus winner's own pips
     pointsWon = Math.max(0, pointsWon - lowestPips);
-    winner.score += pointsWon;
+    awardPoints(state, winnerSeat, pointsWon);
 
+    const winner = state.players[winnerSeat];
     state.winnerSeat = winnerSeat;
     state.roundSummary = {
       reason: 'blocked',
@@ -423,7 +524,7 @@ export class DominoEngine {
       playerPips
     };
 
-    if (winner.score >= state.targetScore) {
+    if (scoreMeetsTarget(state, winnerSeat)) {
       state.status = 'match_end';
       state.lastAction = `🏆 Blocked! ${winner.name} wins the match with ${winner.score} points!`;
     } else {

@@ -8,7 +8,12 @@ describe('Local hand faces the seated player', () => {
     expect(center.rotX).toBeCloseTo(LOCAL_HAND_FACE_TILT);
     expect(center.rotX).toBeGreaterThan(Math.PI / 4);
     expect(center.y).toBeGreaterThan(0.5);
-    expect(center.z).toBeGreaterThan(3);
+    expect(center.z).toBeGreaterThan(3.4);
+
+    const inspect = localHandSlot(3, 7, 'inspect');
+    expect(inspect.z).toBeGreaterThan(center.z);
+    expect(inspect.y).toBeGreaterThan(center.y);
+    expect(inspect.rotY).toBe(0);
   });
 
   it('fans left and right tiles while keeping the same face-toward-player tilt', () => {
