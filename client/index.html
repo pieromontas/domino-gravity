@@ -205,8 +205,15 @@
                   <input id="team-name-1" class="team-name-input" type="text" maxlength="20" placeholder="Equipo B" />
                 </label>
               </div>
-              <p class="team-help">Default partners sit opposite (seats 1+3 vs 2+4). Host can swap partners or seat them opposite again.</p>
-              <button type="button" id="btn-seat-opposite" class="btn-secondary btn-seat-opposite">Seat partners opposite</button>
+              <div id="team-arrange-board" class="team-arrange-board" hidden></div>
+              <p class="team-help" id="team-arrange-help">Default partners sit opposite (seats 1+3 vs 2+4).</p>
+              <div id="team-arrange-actions" class="team-arrange-actions hidden">
+                <div class="score-selector-pills" id="arrange-mode-pills">
+                  <button type="button" class="arrange-pill active" data-arrange="partner">Set partners</button>
+                  <button type="button" class="arrange-pill" data-arrange="swap">Swap seats</button>
+                </div>
+                <button type="button" id="btn-seat-opposite" class="btn-secondary btn-seat-opposite">Seat partners opposite</button>
+              </div>
             </div>
 
             <div class="lobby-actions-row">

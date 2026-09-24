@@ -6,8 +6,11 @@ import {
   opposingTeamPips,
   sanitizeTeamName,
   seatPartnersOpposite,
+  setPartnerPair,
   swapSeatToOtherTeam,
-  syncPartnershipRoster
+  swapSeats,
+  syncPartnershipRoster,
+  teamsAreBalanced
 } from './partnership.ts';
 import { GameState, Tile } from './types.ts';
 
@@ -73,6 +76,47 @@ describe('Partnership helpers', () => {
     expect(seatPartnersOpposite(state)).toBe(true);
     expect(state.players.filter((_, i) => i % 2 === 0).every((p) => p.teamId === 0)).toBe(true);
     expect(state.players.filter((_, i) => i % 2 === 1).every((p) => p.teamId === 1)).toBe(true);
+  });
+
+  it('lets the host pair any two seats and forces the other two onto the other team', () => {
+    const state = fourPlayerState();
+    expect(setPartnerPair(state, 0, 1)).toBe(true);
+    expect(state.players[0].teamId).toBe(0);
+    expect(state.players[1].teamId).toBe(0);
+    expect(state.players[2].teamId).toBe(1);
+    expect(state.players[3].teamId).toBe(1);
+    expect(teamsAreBalanced(state)).toBe(true);
+    expect(state.teams[0].seats).toEqual([0, 1]);
+    expect(state.teams[1].seats).toEqual([2, 3]);
+
+    expect(setPartnerPair(state, 1, 3, 1)).toBe(true);
+    expect(state.players.filter((p) => p.teamId === 1).map((p) => p.seat).sort()).toEqual([1, 3]);
+    expect(state.players.filter((p) => p.teamId === 0).map((p) => p.seat).sort()).toEqual([0, 2]);
+    expect(teamsAreBalanced(state)).toBe(true);
+  });
+
+  it('rejects partner pairs that would not stay 2v2', () => {
+    const state = fourPlayerState();
+    expect(setPartnerPair(state, 0, 0)).toBe(false);
+    expect(setPartnerPair(state, 0, 4)).toBe(false);
+    expect(setPartnerPair(state, -1, 2)).toBe(false);
+    state.players.pop();
+    expect(setPartnerPair(state, 0, 1)).toBe(false);
+  });
+
+  it('swaps seated identities without changing who partners with whom', () => {
+    const state = fourPlayerState();
+    const hostId = state.players[0].id;
+    const aiId = state.players[3].id;
+    expect(swapSeats(state, 0, 3)).toBe(true);
+    expect(state.players[0].id).toBe(aiId);
+    expect(state.players[3].id).toBe(hostId);
+    expect(state.players[0].isAI).toBe(true);
+    expect(state.players[3].name).toBe('Ana');
+    expect(state.players[0].teamId).toBe(1);
+    expect(state.players[3].teamId).toBe(0);
+    expect(teamsAreBalanced(state)).toBe(true);
+    expect(swapSeats(state, 0, 0)).toBe(false);
   });
 
   it('sanitizes team names', () => {

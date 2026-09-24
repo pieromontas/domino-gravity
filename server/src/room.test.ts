@@ -347,6 +347,8 @@ describe('host-controlled table selection', () => {
     room.addAI('user-alex', 'easy');
     expect(room.handleClientMessage('user-alex', { type: 'SET_TEAM_NAME', teamId: 1, name: 'Leones' }).ok).toBe(true);
     expect(room.state.teams[1].name).toBe('Leones');
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 1 }).ok).toBe(true);
+    expect(room.state.players.filter((p) => p.teamId === 0).map((p) => p.seat).sort()).toEqual([0, 1]);
     expect(room.startGame('user-alex').ok).toBe(true);
     const hand = room.state.players[0].hand;
     expect(room.reorderHand('user-alex', [...hand].reverse()).ok).toBe(true);
@@ -357,6 +359,50 @@ describe('host-controlled table selection', () => {
 
 describe('host-controlled table message bus', () => {
   const store = new SessionStore();
+
+  it('lets only the host pair any two seats and swap people while staying 2v2', () => {
+    const room = new GameRoom('discord:g:c:arrange', { graceMs: 50, aiDelayMs: 10_000 });
+    const alexSock = mockSocket();
+    const samSock = mockSocket();
+    room.addAuthenticatedPlayer(session(store, 'Alex', 'user-alex'), alexSock);
+    room.addAuthenticatedPlayer(session(store, 'Sam', 'user-sam'), samSock);
+    expect(room.addAI('user-alex', 'easy').ok).toBe(true);
+    expect(room.addAI('user-alex', 'easy').ok).toBe(true);
+
+    expect(room.handleClientMessage('user-sam', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 1 }).ok).toBe(false);
+    expect(room.state.players.map((p) => p.teamId)).toEqual([0, 1, 0, 1]);
+
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 1 }).ok).toBe(true);
+    expect(room.state.players.filter((p) => p.teamId === 0).map((p) => p.seat).sort()).toEqual([0, 1]);
+    expect(room.state.players.filter((p) => p.teamId === 1).map((p) => p.seat).sort()).toEqual([2, 3]);
+    expect(room.state.players.filter((p) => p.teamId === 0)).toHaveLength(2);
+    expect(room.state.players.filter((p) => p.teamId === 1)).toHaveLength(2);
+    const alexView = alexSock.sent.at(-1) as { state: { players: Array<{ teamId?: number; id: string }> } };
+    const samView = samSock.sent.at(-1) as { state: { players: Array<{ teamId?: number; id: string }> } };
+    expect(alexView.state.players.map((p) => p.teamId)).toEqual(samView.state.players.map((p) => p.teamId));
+    expect(alexView.state.players.map((p) => p.id)).toEqual(samView.state.players.map((p) => p.id));
+
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 0 }).ok).toBe(false);
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 9 }).ok).toBe(false);
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 2, teamId: 7 }).ok).toBe(false);
+
+    const beforeIds = room.state.players.map((p) => p.id);
+    expect(room.handleClientMessage('user-sam', { type: 'SWAP_SEATS', seatA: 0, seatB: 2 }).ok).toBe(false);
+    expect(room.state.players.map((p) => p.id)).toEqual(beforeIds);
+
+    expect(room.handleClientMessage('user-alex', { type: 'SWAP_SEATS', seatA: 0, seatB: 2 }).ok).toBe(true);
+    expect(room.state.players[0].id).toBe(beforeIds[2]);
+    expect(room.state.players[2].id).toBe(beforeIds[0]);
+    expect(room.state.players[0].isAI).toBe(true);
+    expect(room.state.players.find((p) => p.id === 'user-alex')?.isHost).toBe(true);
+    expect(room.state.players.filter((p) => p.teamId === 0)).toHaveLength(2);
+    expect(room.state.players.filter((p) => p.teamId === 1)).toHaveLength(2);
+
+    expect(room.startGame('user-alex').ok).toBe(true);
+    expect(room.state.players.filter((p) => p.teamId === 0)).toHaveLength(2);
+    expect(room.handleClientMessage('user-alex', { type: 'SET_PARTNER_PAIR', seatA: 0, seatB: 3 }).ok).toBe(false);
+    room.dispose();
+  });
 
   it('accepts SET_TABLE over the client message bus', () => {
     const room = new GameRoom('discord:g:c:table-msg', { graceMs: 50, aiDelayMs: 0 });
