@@ -227,6 +227,32 @@ The same unified Node server works on Railway, Render, Fly.io, or Docker. Split 
 
 ---
 
+## 🤝 Contributing
+
+Bug fixes and improvements are welcome. This is an npm workspaces repository (`client` and `server`) and needs **Node.js 22** or newer.
+
+1. Fork the repository and create a branch from `main`.
+2. From the repository root, install dependencies:
+   ```bash
+   npm install
+   ```
+3. To exercise the Discord Activity path, copy `.env.example` to `.env` and fill in your own [Discord Developer Portal](https://discord.com/developers/applications) values. `.env` is gitignored. Do not commit `DISCORD_CLIENT_SECRET` or any other credential.
+4. Run the app as described in **Quickstart: Local Standalone Mode**: `npm run dev:client` for the browser, or `npm run dev:all` for the client and the authoritative server together.
+5. Run the tests before you open a pull request:
+   ```bash
+   npm test
+   ```
+   That runs Vitest in both workspaces (`client/src/**/*.test.ts` and `server/src/**/*.test.ts`).
+6. Open a pull request against `main`. Describe the behavior you changed and how you checked it.
+
+Rules code is duplicated in `client/src/engine` and `server/src/engine`. Server files import with `.js` specifiers; client files use `.ts`. The server copy decides multiplayer matches (`server/src/room.ts`, `server/src/server.ts`). The client copy drives local solo play. If you change a rule, update both copies and the tests in the workspace you touched. Three.js rendering lives in `client/src/renderer`.
+
+---
+
 ## 📜 License
 
-MIT License © 2026 Domino Gravity
+The code in this repository is released under the [MIT License](LICENSE).
+
+Copyright (c) 2026 Piero Montas
+
+The patio bachata tracks in `client/public/audio/` are third-party music under the Pixabay Content License. See [`client/public/audio/LICENSE.txt`](client/public/audio/LICENSE.txt).
