@@ -227,6 +227,38 @@ The same unified Node server works on Railway, Render, Fly.io, or Docker. Split 
 
 ---
 
+## 🤝 Contributing
+
+Contributions are welcome. The playable client is the `client` workspace; the authoritative multiplayer server is the `server` workspace.
+
+1. Use **Node.js 22** or newer (`engines` in the root `package.json`).
+2. From the repository root, install both workspaces:
+
+   ```bash
+   npm install
+   ```
+
+3. Run the game with the Quickstart section above. `npm run dev:client` is enough for solo play in the browser. `npm run dev:all` starts the client and the server together for two-browser rooms.
+4. Before you open a pull request, run:
+
+   ```bash
+   npm test
+   npm run build
+   ```
+
+   `npm test` runs Vitest in `client` and `server`. `npm run build` typechecks and builds both workspaces. Pushes to `main` run `npm ci`, the build, and the tests in GitHub Actions.
+
+5. Keep credentials out of git. Discord Activity development uses a root `.env` copied from `.env.example`. Never commit `.env` or `DISCORD_CLIENT_SECRET`.
+
+Rules, dealing, and scoring live in `client/src/engine`. Lobby seats, turns, and match state for multiplayer are owned by `server/src`. Add or update tests next to the code you change.
+
+Patio tracks in `client/public/audio/` stay under the Pixabay Content License in `client/public/audio/LICENSE.txt`. Do not swap in differently licensed audio without updating that notice.
+
 ## 📜 License
 
-MIT License © 2026 Domino Gravity
+Domino Gravity is released under the [MIT License](LICENSE).
+
+Copyright (c) 2026 Piero Montas
+
+The bundled patio music is separate from that grant. See [`client/public/audio/LICENSE.txt`](client/public/audio/LICENSE.txt).
+
